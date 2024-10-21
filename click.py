@@ -84,15 +84,15 @@ def main():
     # Desired position in the image
     click_dict_2 = {(pos['包裹']):1, (pos['紫阳琴']):1, (pos['弹奏']):1, (pos['阳关三叠']):1}
     time.sleep(3)
-    def auto_click_event(click_dict):
+    def auto_click_event(click_list):
         time.sleep(1)
-        for index, item in enumerate(click_dict.items()):
+        for index, (key, value) in enumerate(click_list):
+            print(index, (key, value))
             # Map to screen coordinates
-            if type(item[0][0]) == int:
-                image_click_x = item[0][0]
-                image_click_y = item[0][1]
-                time_gap = item[1]
-                print(item)
+            if type(key[0]) == int:
+                image_click_x = key[0]
+                image_click_y = key[1]
+                time_gap = value
                 window_click_x = window_left + image_click_x * scale_x
                 window_click_y = image_click_y * scale_y +  window_top
 
@@ -107,11 +107,10 @@ def main():
                 pyautogui.moveTo(window_click_x, window_click_y, duration=0.1)
                 pyautogui.click()
             else:
-                print(item)
-                drag_init_x = item[0][0][0]
-                drag_init_y = item[0][0][1]
-                drag_end_x = item[0][1][0]
-                drag_end_y = item[0][1][1]
+                drag_init_x = key[0][0]
+                drag_init_y = key[0][1]
+                drag_end_x = key[1][0]
+                drag_end_y = key[1][1]
                 window_drag_init_x = window_left + drag_init_x * scale_x
                 window_drag_end_x = window_left + drag_end_x * scale_x
                 window_drag_init_y = drag_init_y * scale_y +  window_top
@@ -128,13 +127,14 @@ def main():
     #auto_click_event(click_dict_3)
     #auto_click_event(click_dict_4)
     #auto_click_event(click_dict_5)
-    auto_click_event(bear1)
-    auto_click_event(bear2)
-    auto_click_event(bear3)
-    auto_click_event(bear4)
-    auto_click_event(bear5)
     #auto_click_event(sleep1)
-    auto_click_event(bear6)
+    auto_click_event(bear7)
+    #auto_click_event(bear2)
+    #auto_click_event(bear3)
+    #auto_click_event(bear4)
+    #auto_click_event(bear5)
+    ##auto_click_event(sleep1)
+    #auto_click_event(bear6)
     #temp_dict = {(pos['title']):1,(1203, 795):1}
     #auto_click_event(temp_dict)
 
