@@ -1,0 +1,7 @@
+numpy
+opencv-python
+pillow
+pyautogui
+pynput
+pyobjc-framework-Cocoa
+pyobjc-framework-Quartz

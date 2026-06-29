@@ -1,14 +1,9 @@
+import ast
 import time
-import sys
 import os
-from datetime import datetime, timedelta
-import pyautogui
-from PIL import Image
-from pynput.mouse import Listener
+from datetime import datetime
 
-# macOS-specific imports
-from AppKit import NSWorkspace, NSApplication
-from Quartz import CGWindowListCopyWindowInfo, kCGWindowListOptionOnScreenOnly
+from automation import GameAutomation, calculate_event_time
 from coordinates import *
 
 log_file_path = "event_log.txt"
@@ -32,41 +27,12 @@ def read_log():
                 # Split on "Last Execution" and "Remaining Time"
                 parts = line.strip().split(", Remaining Time: ")
                 if len(parts) == 2:
-                    remaining_info = parts[1].strip()
-                    # Parse the remaining time dictionary
-                    try:
-                        # Convert the string representation of the dictionary to an actual dictionary
-                        remaining_time = eval(remaining_info)
-                        event_times.update(remaining_time)
-                    except Exception as e:
-                        print(f"Error parsing line: {line}. Exception: {e}")
-    else:
-        # If the log file doesn't exist, use default values
-        event_times.update(default_values)
-    return event_times 
-
-def read_log():
-    event_times = {}
-    default_values = {
-        "2_hour": 0,
-        "3_hour": 0,
-        "5_hour": 0,
-        "6_hour": 0,
-    }
-    
-    if os.path.exists(log_file_path):
-        with open(log_file_path, "r") as log_file:
-            for line in log_file:
-                # Split on "Last Execution" and "Remaining Time"
-                parts = line.strip().split(", Remaining Time: ")
-                if len(parts) == 2:
                     execution_time_str = parts[0].split("Last Execution: ")[1].strip()
                     remaining_info = parts[1].strip()
                     
                     # Parse the remaining time dictionary
                     try:
-                        # Convert the string representation of the dictionary to an actual dictionary
-                        remaining_time = eval(remaining_info)
+                        remaining_time = ast.literal_eval(remaining_info)
                         
                         # Calculate the time difference
                         execution_time = datetime.strptime(execution_time_str, '%Y-%m-%d %H:%M:%S.%f')
@@ -84,101 +50,12 @@ def read_log():
         event_times.update(default_values)
 
     return event_times
-# Callback function for when the mouse button is pressed
-def on_click(x, y, button, pressed):
-    global mouse_pressed
-    mouse_pressed = pressed
-    if pressed:
-        print("Mouse is down")
-    else:
-        print("Mouse is up")
-    
-def get_window_info(window_name):
-    options = kCGWindowListOptionOnScreenOnly
-    window_list = CGWindowListCopyWindowInfo(options, 0)
-
-    for window in window_list:
-        owner_name = window.get('kCGWindowOwnerName', '')
-        window_title = window.get('kCGWindowName', '')
-
-        if window_name in window_title or window_name in owner_name:
-            bounds = window.get('kCGWindowBounds', {})
-            x = bounds.get('X', 0)
-            y = bounds.get('Y', 0)
-            width = bounds.get('Width', 0)
-            height = bounds.get('Height', 0)
-
-            from AppKit import NSScreen
-            screen_height = NSScreen.screens()[0].frame().size.height
-            y = screen_height - y - height
-
-            return {
-                'left': x,
-                'top': y,
-                'width': width,
-                'height': height
-            }
-    return None
-
 def main():
-    game_title = 'JiangHu-mobile'
-    game_title = '烟雨江湖'
-
-    window_info = get_window_info(game_title)
-
-    screen_width, screen_height = pyautogui.size()
-    print(f"Screen width: {screen_width}, Screen height: {screen_height}")
-    if not window_info:
-        print(f"No window found with title or owner '{game_title}'.")
-        return
-
-    window_left = window_info['left']
-    window_width = window_info['width']
-    window_height = window_info['height']
-    window_top = screen_height - window_info['top'] - window_height
-
-    print(f"Window Position: ({window_left}, {window_top})")
-    print(f"Window Size: {window_width}x{window_height}")
-
-    image = Image.open('game_screenshot.png')
-    image_width, image_height = image.size
-
-    print(f"Image Size: {image_width}x{image_height}")
-
-    scale_x = window_width / image_width
-    scale_y = window_height / image_height
-
+    automation = GameAutomation()
     time.sleep(3)
-    
+
     def auto_click_event(click_list):
-        time.sleep(1)
-        for index, (key, value) in enumerate(click_list):
-            if type(key[0]) == int:
-                image_click_x = key[0]
-                image_click_y = key[1]
-                time_gap = value
-                window_click_x = window_left + image_click_x * scale_x
-                window_click_y = image_click_y * scale_y + window_top
-                time.sleep(time_gap)
-                pyautogui.moveTo(window_click_x, window_click_y, duration=0.1)
-                pyautogui.click()
-            else:
-                drag_init_x = key[0][0]
-                drag_init_y = key[0][1]
-                drag_end_x = key[1][0]
-                drag_end_y = key[1][1]
-                window_drag_init_x = window_left + drag_init_x * scale_x
-                window_drag_end_x = window_left + drag_end_x * scale_x
-                window_drag_init_y = drag_init_y * scale_y + window_top
-                window_drag_end_y = drag_end_y * scale_y + window_top
-                pyautogui.moveTo(window_drag_init_x, window_drag_init_y)
-                time.sleep(0.2)
-                pyautogui.dragTo(window_drag_end_x, window_drag_end_y, button='left', duration=0.5)
-                time.sleep(0.2)
-        time.sleep(2.5)
-        
-    def calculate_event_time(base_time, interval_minutes, compensate=0):
-        return base_time + timedelta(minutes=interval_minutes + compensate)
+        automation.run_actions(click_list)
     
     current_time = datetime.now()
     # Load previously logged remaining times
