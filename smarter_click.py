@@ -84,7 +84,6 @@ def main():
 
 
     # Desired position in the image
-    click_dict_2 = {(pos['包裹']):1, (pos['紫阳琴']):1, (pos['弹奏']):1, (pos['阳关三叠']):1}
     time.sleep(3)
     def auto_click_event(click_list):
         time.sleep(1)
@@ -121,110 +120,117 @@ def main():
                 time.sleep(0.2)
                 # Pause for a brief moment if needed
         time.sleep(2.5)
+        
+
+    def calculate_event_time(base_time, interval_minutes, compensate=0):
+        """Calculate the event execution time based on the base time and an interval."""
+        return base_time + timedelta(minutes=interval_minutes + compensate)
+    
+    # Get the current time and compensate if needed
     current_time = datetime.now()
     compensate = 0
+    hour_lag = 0
+    
     if len(sys.argv) == 2:
-        current_minute = int(sys.argv[1])
+        compensate = int(sys.argv[1])
     elif len(sys.argv) == 3:
-        current_minute = int(sys.argv[2])
-        current_hour = int(sys.argv[1])
-    elif len(sys.argv) == 4:
-        current_minute = int(sys.argv[2])
-        current_hour = int(sys.argv[1])
-        compensate = int(sys.argv[3])
-    else:
-        current_minute = current_time.minute
-        current_hour = current_time.hour
-    print(f"minute set to: {current_minute}")
-    print(f"hour set to: {current_hour}")
-    print(f"compensate set to: {compensate}")
-    min_1hour = current_minute + compensate 
-    min_2hour = current_minute + 11 + compensate           
-    min_3hour = current_minute + 14 + compensate
-    min_5hour = current_minute + 19 + compensate
-    min_6hour = current_minute + 17 + compensate
-    min_day = current_minute + 24 + compensate
+        hour_lag = int(sys.argv[2])
+    current_minute = current_time.minute
+    current_hour = current_time.hour
+    
+    # Set up initial event offsets
+    min_1hour =   compensate
+    min_2hour =   11 + compensate + 60 * hour_lag
+    min_3hour =   14 + compensate + 60 * hour_lag
+    min_5hour =   22 + compensate
+    min_6hour =   20 + compensate
+    min_day =   25 + compensate
+    
+    # Set up event intervals (in minutes)
+    intervals = {
+        "1_hour": 62,
+        "2_hour": 122,
+        "3_hour": 182,
+        "5_hour": 302,
+        "6_hour": 362,
+        "daily": 1442  # 24 hours + compensation
+    }
+    
+    # Calculate the initial execution times
+    event_times = {
+        "1_hour": calculate_event_time(current_time, min_1hour),
+        "2_hour": calculate_event_time(current_time, min_2hour),
+        "3_hour": calculate_event_time(current_time, min_3hour),
+        "5_hour": calculate_event_time(current_time, min_5hour),
+        "6_hour": calculate_event_time(current_time, min_6hour),
+        "daily": calculate_event_time(current_time, min_day),
+    }
+    
+    print(event_times)
     second_lag = 30
-    # Schedule Events (hourly, every 5 minutes, and daily events)
-    def schedule_events(current_hour, min_1hour, min_2hour, min_3hour, min_5hour, min_6hour, min_day, second_lag):
+        
+    def schedule_events(event_times, second_lag):
         current_time = datetime.now()
-
-        # Every 5-minute Events: Run every 5 minutes
-        if current_time.minute % 6 == (current_minute % 6) and current_time.second == 20:
-            print(f"Executing 5-minute interval events at {current_time}")
-            auto_click_event(save)
-            
-        # Hourly Events: Run at the start of each hour, with 0.5 min error margin
-        if current_time.minute == min_1hour  and current_time.second > second_lag:
-            print(f"Executing 1-hourly events at {current_time}")
-            print("minute threshold now is: ", min_1hour)
-            auto_click_event(bear1)
-            auto_click_event(bear_tianshan)
-            auto_click_event(bear2)
-            auto_click_event(bear3)
-            auto_click_event(bear4)
-            auto_click_event(bear5)
-            auto_click_event(bear6)
-            auto_click_event(bear8)
-            auto_click_event(bear9)
-            auto_click_event(bear10)
-            auto_click_event(bear11)
-            auto_click_event(bear12)
-            auto_click_event(bear13)
-            auto_click_event(pig2)
-            auto_click_event(pig1)
-        if current_time.minute == min_2hour and (current_time.hour - current_hour)% 2 ==0 and current_time.second > second_lag:
-            print(f"Executing 2-hourly events at {current_time}")
-            auto_click_event(sleep1)
-            auto_click_event(xigua)
-            auto_click_event(jiazhai)
-
-        if current_time.minute == min_3hour and (current_time.hour - current_hour)% 3 ==0 and current_time.second > second_lag:
-            print(f"Executing 3-hourly events at {current_time}")
-            auto_click_event(sleep1)
-            auto_click_event(bear7)
-            auto_click_event(bear14)
-
-        if current_time.minute == min_5hour and (current_time.hour - current_hour)% 5 ==0 and current_time.second > second_lag:
-            print(f"Executing 5-hourly events at {current_time}")
-            auto_click_event(xiangjiao)
-            auto_click_event(shanzha)
-            auto_click_event(pingguo)
-            auto_click_event(changbaipingguo)
-            auto_click_event(lianou)
-
-        if current_time.minute == min_6hour and (current_time.hour - current_hour)% 6 ==0 and current_time.second > second_lag:
-            print(f"Executing 5-hourly events at {current_time}")
-            auto_click_event(jianshui)
-            auto_click_event(hexia1)
-            auto_click_event(hexia2)
-
-
-        # Daily Events: Run once per day at a specified time, e.g., 09:00 AM
-        if current_time.minute == min_6hour and (current_time.hour - current_hour)% 24 == 0 and current_time.second > second_lag:
-            print(f"Executing daily events at {current_time}")
-            auto_click_event(suancai)
-
-
-    #auto_click_event(hexia2)
-    #auto_click_event(pingguo)
+    
+        # Check and execute each event based on its interval
+        for name, event_time in event_times.items():
+            if current_time >= event_time and current_time.second > second_lag:
+                print(f"{name} event at {current_time}")
+                if name == "1_hour":
+                    auto_click_event(bear1)
+                    auto_click_event(bear_tianshan)
+                    auto_click_event(bear2)
+                    auto_click_event(bear3)
+                    auto_click_event(bear4)
+                    auto_click_event(bear5)
+                    auto_click_event(bear6)
+                    auto_click_event(bear8)
+                    auto_click_event(bear9)
+                    auto_click_event(bear10)
+                    auto_click_event(bear11)
+                    auto_click_event(bear12)
+                    auto_click_event(bear13)
+                    auto_click_event(bear15)
+                    auto_click_event(pig2)
+                    auto_click_event(pig1)
+                    auto_click_event(save)
+                elif name == "2_hour":
+                    auto_click_event(sleep1)
+                    auto_click_event(xigua)
+                    auto_click_event(jiazhai)
+                    auto_click_event(save)
+                elif name == "3_hour":
+                    auto_click_event(sleep1)
+                    auto_click_event(bear7)
+                    auto_click_event(cow1)
+                    auto_click_event(cow2)
+                    auto_click_event(bear14)
+                    auto_click_event(save)
+                elif name == "5_hour":
+                    auto_click_event(xiangjiao)
+                    auto_click_event(shanzha)
+                    auto_click_event(pingguo)
+                    auto_click_event(changbaipingguo)
+                    auto_click_event(lianou)
+                    auto_click_event(save)
+                elif name == "6_hour":
+                    auto_click_event(jianshui)
+                    auto_click_event(hexia1)
+                    auto_click_event(hexia2)
+                    auto_click_event(save)
+                elif name == "daily":
+                    auto_click_event(sleep2)
+                    auto_click_event(suancai)
+    
+                # Reschedule event after its interval has passed
+                event_times[name] = calculate_event_time(current_time, intervals[name] - second_lag)
+                # Calculate the next execution time based on the original interval, ignoring execution time
+                next_event_time = event_time + timedelta(minutes=intervals[name])
+                event_times[name] = next_event_time
+    
     # Main loop
     while True:
-        schedule_events(current_hour, min_1hour, min_2hour, min_3hour, min_5hour, min_6hour, min_day, second_lag)
-        if current_time.minute == 0 and current_time.second == 0:
-            min_1hour += 1
-            min_2hour += 1
-            min_3hour += 1
-            min_5hour += 1
-            min_6hour += 1
-            second_lag += 3
-            if second_lag >= 60:
-               second_lag -= 60
-               min_1hour += 1
-               min_2hour += 1
-               min_3hour += 1
-               min_5hour += 1
-               min_6hour += 1
+        schedule_events(event_times, second_lag)
         time.sleep(1)  # Check every second for precise execution
 
 if __name__ == "__main__":

@@ -150,60 +150,10 @@ def main():
         current_time = datetime.now()
 
         # Every 5-minute Events: Run every 5 minutes
-        if current_time.minute % 6 == (current_minute % 6) and current_time.second == 20:
+        if current_time.minute % 2 == (current_minute % 6) and current_time.second == 20:
             print(f"Executing 5-minute interval events at {current_time}")
             auto_click_event(save)
             
-        # Hourly Events: Run at the start of each hour, with 0.5 min error margin
-        if current_time.minute == min_1hour  and current_time.second > second_lag:
-            print(f"Executing 1-hourly events at {current_time}")
-            print("minute threshold now is: ", min_1hour)
-            auto_click_event(bear1)
-            auto_click_event(bear_tianshan)
-            auto_click_event(bear2)
-            auto_click_event(bear3)
-            auto_click_event(bear4)
-            auto_click_event(bear5)
-            auto_click_event(bear6)
-            auto_click_event(bear8)
-            auto_click_event(bear9)
-            auto_click_event(bear10)
-            auto_click_event(bear11)
-            auto_click_event(bear12)
-            auto_click_event(bear13)
-            auto_click_event(pig2)
-            auto_click_event(pig1)
-        if current_time.minute == min_2hour and (current_time.hour - current_hour)% 2 ==0 and current_time.second > second_lag:
-            print(f"Executing 2-hourly events at {current_time}")
-            auto_click_event(sleep1)
-            auto_click_event(xigua)
-            auto_click_event(jiazhai)
-
-        if current_time.minute == min_3hour and (current_time.hour - current_hour)% 3 ==0 and current_time.second > second_lag:
-            print(f"Executing 3-hourly events at {current_time}")
-            auto_click_event(sleep1)
-            auto_click_event(bear7)
-            auto_click_event(bear14)
-
-        if current_time.minute == min_5hour and (current_time.hour - current_hour)% 5 ==0 and current_time.second > second_lag:
-            print(f"Executing 5-hourly events at {current_time}")
-            auto_click_event(xiangjiao)
-            auto_click_event(shanzha)
-            auto_click_event(pingguo)
-            auto_click_event(changbaipingguo)
-            auto_click_event(lianou)
-
-        if current_time.minute == min_6hour and (current_time.hour - current_hour)% 6 ==0 and current_time.second > second_lag:
-            print(f"Executing 5-hourly events at {current_time}")
-            auto_click_event(jianshui)
-            auto_click_event(hexia1)
-            auto_click_event(hexia2)
-
-
-        # Daily Events: Run once per day at a specified time, e.g., 09:00 AM
-        if current_time.minute == min_6hour and (current_time.hour - current_hour)% 24 == 0 and current_time.second > second_lag:
-            print(f"Executing daily events at {current_time}")
-            auto_click_event(suancai)
 
 
     #auto_click_event(hexia2)

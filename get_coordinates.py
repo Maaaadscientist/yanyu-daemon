@@ -11,7 +11,14 @@ def show_pixel_value(event, x, y, flags, param):
         pixel_value = img[y, x]
         text = f"X: {x}, Y: {y}, RGB: {pixel_value}"
         img_copy = img.copy()
-        cv2.putText(img_copy, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #cv2.putText(img_copy, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        #cv2.putText(img_copy, text, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 4)
+        text_size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1.5, 4)
+        text_w, text_h = text_size
+        cv2.rectangle(img_copy, (10, 20), (10 + text_w, 20 + text_h + 10), (0, 0, 0), -1)  # Black background
+        cv2.putText(img_copy, text, (10, 20 + text_h), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 4)
+
+
         cv2.imshow(window_name, img_copy)
 
 # Function to find the latest screenshot in the directory

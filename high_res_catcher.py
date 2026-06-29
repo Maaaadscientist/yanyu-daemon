@@ -51,7 +51,8 @@ def screenshot_app_window_high_res(app_name):
     else:
         print(f"No window found for application named {app_name}")
 
-app_name = "JiangHu-mobile"
+#app_name = "JiangHu-mobile"
+app_name = "烟雨江湖"
 
 def on_press(key):
     try:

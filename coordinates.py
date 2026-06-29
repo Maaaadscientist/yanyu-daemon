@@ -3,9 +3,10 @@ pos = {
 '边栏1':(1951,611),
 '边栏2':(1951,704),
 '确认':(1289,770),
+'确认1':(1289,770),
 '确认2':(1289,852),
 '马车票':(1030,635),
-'紫阳琴':(1755,643),
+'紫阳琴':(1019,835),
 '包裹':(468,1575),
 '角色':(231,1575),
 '武功':(691,1575),
@@ -15,13 +16,30 @@ pos = {
 '弹奏':(757,1222),
 '阳关三叠':(611,622),
 '叫唤马车':(622,1222),
+'返回家宅':(1970,1308),
+'家宅1':(733,177),
+'家宅2':(154,555),
+'家宅池塘':(457,507),
+'家宅羊圈1':(542,641),
+'家宅羊圈2':(727,736),
+'家宅羊圈3':(730,931),
+'家宅牛棚4':(1109,920),
+'家宅杂草':(379,622),
 '地图上端':(1024,66),
 '地图下端':(1024,1622),
 '左上角':(66,66),
 '左下角':(66,1622),
 '右上角':(2069,66),
 '右下角':(2069,1622),
-'右上黑水沟':(1599,295),
+'右上黑水沟':(1629,304),
+'前往黑水沟':(1222,824),
+'黑水沟1':(164,800),
+'黑水沟2':(847,229),
+'黑水沟3':(457,442),
+'帝陵外1':(1679,834),
+'wenxiangxu':(1035,813),
+
+
 '仰天岭':(836,308),
 '仰天岭出发':(439,798),
 '仰天岭1':(109,1038),
@@ -33,13 +51,40 @@ pos = {
 '幽州2':(1612,487),
 '幽州3':(1759,606),
 '幽州4':(1481,553),
+'幽州刘氏别院':(1109,279),
+'幽州落日牧场1':(157,538),
+'幽州落日牧场2':(1580,412),
+'幽州落日牧场3':(1389,603),
+'幽州落日牧场4':(1660,274),
+'西风古道1':(1660,775),
+'西风古道2':(1660,648),
+'西风古道3':(1660,542),
+'落日牧场1':(726,204),
+'落日牧场2':(544,271),
+'落日牧场3':(723,457),
+'落日牧场4':(1763,619),
+'刘氏别院1':(78,231),
+'刘氏别院2':(444,704),
+'刘氏别院3':(627,695),
+'刘氏别院4':(347,364),
+'刘氏别院5':(724,811),
+'刘氏别院地窖':(1386,1330),
+'刘氏别院地窖1':(725,799),
+'刘氏别院地窖2':(816,751),
+'刘氏别院地窖3':(1008,834),
+'刘氏别院地窖离开':(195,437),
 '长白1':(1760,412),
 '长白2':(1670,1222),
 '长白3':(1491,543),
+'长白酸菜1':(1487,1220),
+'长白酸菜2':(1291,1208),
+'长白酸菜3':(1105,1124),
 '长白熊':(965,776),
 '长白熊出':(706,1116),
 '长白4':(1108,1476),
 '长白5':(1199,1171),
+'长白苹果':(1397,699),
+'长白紫金':(1583,323),
 'SaiBei-rt':(305,432),
 '洛阳':(471,1175),
 '洛阳出发':(159,1533),
@@ -85,7 +130,521 @@ pos = {
 '塞北4':(917,939),
 '塞北5':(1106,1034),
 '塞北6':(825,985),
+'落霞镇':(1821,1076),
+'落霞镇出发':(1448,1474),
+'落霞镇1':(1389,1451),
+'落霞镇2':(541,1123),
+'峨眉山':(1156,1311),
+'峨眉山出发':(774,1544),
+'峨眉山1':(445,702),
+'成都':(1455,1121),
+'成都出发':(1062,1522),
+'成都1':(1676,1411),
+'成都2':(1668,739),
+'成都3':(1675,649),
+'明月峰':(1763,1182),
+'明月峰出发':(1370,1540),
+'明月峰1':(347,259),
+'凤鸣集':(1742,1000),
+'凤鸣集出发':(1360,1400),
+'凤鸣集1':(1381,226),
+'凤鸣集2':(1672,364),
+'凤鸣集3':(1199,615),
+'南岭':(274,1438),
+'南岭出发':(43,1539),
+'南岭1':(253,795),
+'双王镇':(359,1023),
+'双王镇1':(1196,1453),
+'双王镇2':(1291,930),
+'双王镇出发':(60,1411),
+'龙泉镇':(736,1109),
+'龙泉镇1':(348,1317),
+'龙泉镇2':(255,889),
+'龙泉镇出发':(342,1511),
+'落霞镇华山1':(146,833),
+'落霞镇华山2':(146,458),
+'落霞镇华山3':(536,365),
+'华山1':(722,209),
+'华山2':(1485,364),
+'华山苹果1':(155,844),
+'华山苹果2':(152,1024),
+'华山苹果3':(729,461),
+'塞北祁连山1':(124,938),
+'塞北祁连山2':(158,464), #    乌缕
+'塞北祁连山3':(204,610), # 枯骨
+'塞北祁连山4':(84,1168),
+'塞北祁连山5':(320,1024),
+'祁连山1':(1450,1450),
+'祁连山2':(1679,1127),
+'祁连山3':(1486,1218),
+'祁连山4':(1408,842),
+'十方集':(549,551),
+'十方集出发':(930,949),
+'十方集1':(165,554),
+'十方集2':(447,224),
+'十方集3':(823,379),
+'天山1':(585,192),
+'天山2':(823,510),
+'天山3':(1702,1227),
+'天山4':(1765,888),
+'天山5':(1754,563),
+'天山6':(1766,886), # 羊1
+'天山7':(1128,698), # 羊2
+'天山8':(1315,552), # 牛1
+'天山9':(1504,1125), # 羊3
+'龙泉镇河虾':(470,1070),
+'姑苏河虾1':(161,1033),
+'姑苏河虾2':(150,466),
+'明月峰香蕉1':(1206,791),
+'明月峰香蕉2':(1389,1073),
+'明月峰香蕉3':(1030,1078),
+'明月峰莲藕1':(727,746),
+'明月峰莲藕2':(534,1030),
+'明月峰莲藕3':(76,311),
+'泰山':(909,1025),
+'泰山出发':(576,1428),
+'泰山山楂1':(154,651),
+'泰山山楂2':(152,459),
+'泰山山楂3':(826,606),
+'龙泉镇西瓜1':(537,1222),
+'龙泉镇西瓜2':(824,884),
+'龙泉镇西瓜3':(1010,883),
+'峨眉山碱水1':(1672,832),
+'峨眉山碱水2':(1685,268),
+'保存':(2005,1584),
+'保存确认':(1148,1005),
+'沧州':(720,973),
+'沧州出发':(340, 1381),
+'沧州闻香教':(1484,275),
+'布阵':(888,1578),
+'阴阳阵':(560,1022),
+'梅花阵':(560,561),
+'启用阵法':(1578,463),
+'离开阵法':(2034,1354),
+'闻香教1':(1657,979),
+'闻香教2':(1296,746),
+'闻香教3':(1395,419),
+'闻香教4':(1699,1224),
+'闻香教5':(1699,927),
+'闻香教6':(1198,791),
+'闻香教7':(72,319), # very long distance
+'闻香教8':(822,511),
+'闻香教9':(1577,893),
+'闻香教10':(70,323),
+'闻香教11':(1559,990),
+'闻香教12':(1291,654),
+'闻香教13':(537,1017),
+'闻香教重进':(1000,790),
+'落霞铁匠1':(1675,556),
+'落霞铁匠2':(822,412),
+'确认5':(1284,1244),
+'给予酒食':(1121,470),
+'确定给予':(1724,1022),
+'酒食栏1':(536,681),
+'打造':(1450,1240),
+'diling1':(1746,352),
+'diling2':(1144,638),
+'diling3':(1740,300),
+'dilingbaozang1':(1508,274),
+'dilingbaozang2':(1137,957),
+'dilingbaozang3':(1430,803),
+'likaidiling1':(158,1153),
+'likaidiling2':(300,1200),
+'likaidiling3':(87,1365),
+'huoqubaowu':(884,700),
+'确认3':(1310,1026),
+'kunlunshan':(822,984),
+'kunlunshanchufa':(430,1398),
+'kunlunshan1':(1714,660),
+'kunlunshan2':(1711,1050),
+'wushendian1':(1281,834),
+'wushendian2':(683,719),
+'wushendian3':(1425,426),
+'wushendian4':(649,415),
+'wushendian5':(376,543),
+'wushendian6':(745,763),
+'wushendian7':(746,665),
+#'wushendian8':(292,536),
+'wushendian8':(72,454),
+'wushendian9':(351,662),
+'wushendian10':(1415,700),
 }
+pos['biaoju1'] = (1717,1237)
+pos['biaoju2'] = (1704,655)
+pos['biaoju3'] = (1712,955)
+pos['xuanren_bottom'] = (1057,1347)
+pos['xuanren_top'] = (1057,426)
+pos['xuanren_bottom_confirm'] = (1492,1333)
+pos['shangren'] = (839,711)
+pos['zhifuhuokuan'] = (1265,1208)
+pos['kuilei1'] = (361,1510)
+pos['kuilei2'] = (1321,1051)
+pos['kuilei3'] = (823,1412)
+pos['xuanren2'] = (1327,637)
+pos['xuanren2_confirm'] = (1490,637)
+pos['确认5'] = (1305,1275)
+wushendian = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['kunlunshan'], 0.8),
+    (pos['kunlunshanchufa'], 0.8),
+    (pos['kunlunshan1'], 4.8),
+    (pos['kunlunshan2'], 3.8),
+    (pos['边栏2'], 2.5),
+    (pos['确认1'], 3.5),
+    (pos['确认1'], 3.5),
+    (pos['确认1'], 4.5),
+    (pos['wushendian1'], 4.5),
+    (pos['wushendian2'], 3.5),
+    (pos['空白'], 3.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 3.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['wushendian3'], 3.5),
+    (pos['wushendian4'], 3.5),
+    (pos['wushendian5'], 4.5),
+    (pos['wushendian6'], 5.5),
+    (pos['wushendian7'], 4.0),
+    (pos['wushendian8'], 4.0),
+    (pos['空白'], 2.5),  # duplicate preserved
+    (pos['空白'], 2.5),  # duplicate preserved
+    (pos['wushendian9'], 5.0),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['wushendian10'], 3.0),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['确认1'], 1.5),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['确认1'], 1.5),
+    (pos['wenxiangxu'], 5.5),  # Duplicate preserved
+    (pos['边栏2'], 2.5),
+    (pos['确认'], 4.5),
+    (pos['确认'], 4.5),
+    (pos['确认'], 4.5),
+    (pos['确认'], 4.5),
+    (pos['确认'], 4.5),
+    (pos['wushendian1'], 4.5),
+    (pos['wushendian2'], 3.5),
+    (pos['空白'], 3.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 3.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['wushendian3'], 3.5),
+    (pos['wushendian4'], 3.5),
+    (pos['wushendian5'], 4.5),
+    (pos['wushendian6'], 5.5),
+    (pos['wushendian7'], 4.0),
+    (pos['wushendian8'], 4.0),
+    (pos['空白'], 2.5),  # duplicate preserved
+    (pos['空白'], 2.5),  # duplicate preserved
+    (pos['wushendian9'], 5.0),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['wushendian10'], 3.0),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['确认1'], 1.5),
+    (pos['空白'], 1.5),  # duplicate preserved
+    (pos['确认1'], 1.5),
+
+
+]
+
+pos['酒食'] = (1514,494)
+pos['物品1'] = (1050,652)
+pos['食用'] = (784, 1271)
+#pos['离开包裹']
+pos['怪1'] = (1035,888)
+pos['怪2'] = (351,599)
+pos['怪3'] = (1324,662)
+pos['怪4'] = (156,574)
+pos['怪5'] = (1416,614)
+pos['怪6'] = (1327,665)
+pos['怪7'] = (1322,866)
+pos['怪8'] = (1133,1153)
+pos['怪9'] = (1706,1051)
+pos['怪10'] = (544,1145)
+pos['怪11'] = (68,1100)
+xiaotili = [
+    (pos['烟雨江湖'], 5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上黑水沟'], 0.5),
+    (pos['前往黑水沟'], 1),
+    (pos['黑水沟1'], 3),
+    (pos['黑水沟2'], 3),
+    (pos['黑水沟3'], 3),
+    (pos['帝陵外1'], 5),
+    (pos['确认1'], 7.5),
+    (pos['包裹'], 4.5),
+    (pos['酒食'], 1.5),
+    (pos['物品1'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['离开包裹'], 1.5),
+    (pos['怪1'], 1.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪1'], 1.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪1'], 1.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪1'], 1.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['怪1'], 1.5),
+    (pos['怪2'], 3.5),
+    (pos['怪3'], 3.5),
+    (pos['怪4'], 3.5),
+    (pos['怪5'], 3.5),
+    (pos['怪6'], 3.5),
+    (pos['怪7'], 3.5),
+    (pos['怪8'], 3.5),
+    (pos['怪9'], 3.5),
+    (pos['怪10'], 3.5),
+    (pos['怪11'], 3.5),
+    (pos['包裹'], 4.5),
+    (pos['酒食'], 1.5),
+    (pos['物品1'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['食用'], 1.5),
+    (pos['离开包裹'], 1.5),
+]
+diling1 = [
+    (pos['烟雨江湖'], 5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上黑水沟'], 0.5),
+    (pos['前往黑水沟'], 1),
+    (pos['黑水沟1'], 3),
+    (pos['黑水沟2'], 3),
+    (pos['黑水沟3'], 3),
+    (pos['帝陵外1'], 5),
+
+    (pos['确认3'], 7.5),
+    (pos['确认1'], 5.5),
+    (pos['确认1'], 5.5),
+    #(pos['diling1'], 5),
+    #(pos['diling2'], 3),
+    #(pos['边栏2'], 1.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['确认'], 4.5),
+    #(pos['diling3'], 4),
+    #(pos['diling3'], 4),
+    #(pos['diling3'], 5),
+    #(pos['dilingbaozang1'], 5.5),
+    #(pos['dilingbaozang2'], 3),
+    #(pos['边栏2'], 2.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['确认'], 1.0),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['huoqubaowu'], 0.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['dilingbaozang3'], 3),
+    #(pos['likaidiling1'], 3),
+    #(pos['likaidiling2'], 3),
+    #(pos['likaidiling3'], 5),
+    #(pos['likaidiling3'], 3),
+    #(pos['边栏2'], 2.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['确认'], 1.5),
+    #(pos['likaidiling3'], 5),
+    #(pos['空白'], 4),  # duplicate preserved
+    #(pos['确认'], 1.5),
+    #(pos['确认'], 1.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['边栏2'], 2.5),
+    #(pos['确认3'], 5.5),
+    #(pos['确认1'], 5.5),
+    #(pos['确认1'], 5.5),
+    ##(pos['空白'], 1.5),  # duplicate preserved
+    ##(pos['确认1'], 5.5),
+    ##(pos['确认3'], 5.5),
+    ##(pos['确认1'], 5.5),
+    ##(pos['确认1'], 5.5),
+    #(pos['diling1'], 5),
+    #(pos['diling2'], 3),
+    #(pos['边栏2'], 1.5),
+    #(pos['空白'], 0.5),  # duplicate preserved
+    #(pos['确认'], 4.5),
+    #(pos['diling3'], 4),
+    #(pos['diling3'], 4),
+    #(pos['diling3'], 5),
+]
+dazao=[
+(pos['打造'], 0.20),
+]
 #bear1={
 #(pos['烟雨江湖']):1,
 #(pos['包裹']):0.5,
@@ -233,12 +792,199 @@ pos = {
 #(pos['边栏2']):3.5,
 #(pos['确认']):4.5,
 #}
+pos['洛阳武馆1'] = (1312,1434)
+pos['洛阳武馆2'] = (561,1231)
+#边栏2
+#空白
+pos['批量战斗'] = (1595,1274)
+pos['战斗确认'] = (1370,1098)
+pos['武道商店'] = (852,1278)
+pos['增加数量'] = (1861,919)
+pos['武道购买'] = (1672,1233)
+pos['购买保存确认'] = (1073,1112)
+pos['武道商店离开'] = (2065,1322)
+
+
+wudao = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['洛阳'], 0.5),
+    (pos['洛阳出发'], 1),
+    (pos['洛阳武馆1'], 5),
+    (pos['洛阳武馆2'], 4),
+    (pos['边栏2'], 3.5),
+    (pos['空白'], 3.5),
+    (pos['确认1'], 3.5),
+    (pos['批量战斗'], 2.5),
+    (pos['战斗确认'], 2.5),
+    (pos['武道商店'], 2.5),
+    (pos['增加数量'], 1.5),
+    (pos['增加数量'], 1.5),
+    (pos['增加数量'], 1.5),
+    (pos['增加数量'], 1.5),
+    (pos['武道购买'], 2.5),
+    (pos['购买保存确认'], 2.5),
+    (pos['武道商店离开'], 5.5),
+    (pos['空白'], 1.5),
+]
+pos['jujingbang'] = (1611,1099)
+pos['确认4'] = (1348, 1148)
+jujingyunbiao = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['右下泉州'], 0.5),
+    (pos['右下泉州出发'], 1),
+    (pos['jujingbang'], 5.5),
+    #(pos['边栏2'], 4),
+    #(pos['空白'], 0.4),
+    #(pos['确认1'], 1.5),
+    #(pos['空白'], 0.4),
+    #(pos['确认1'], 1.5),
+    #(pos['空白'], 0.4),
+    #(pos['确认4'], 1.5),
+    #(pos['空白'], 0.4),
+    #(pos['确认5'], 1.5), # 送50份
+    #(pos['空白'], 0.4),
+    #(pos['空白'], 1.4),
+###### yunbiao
+    (pos['边栏2'], 4),
+    (pos['空白'], 0.4),
+    (pos['确认1'], 1.5),
+    (pos['空白'], 0.4),
+    (pos['确认3'], 1.5),
+    (pos['空白'], 0.4),
+    (pos['确认1'], 1.5),
+    (pos['空白'], 0.4),
+    (pos['确认1'], 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    (pos['xuanren_bottom'],2.5),
+    (pos['xuanren_bottom_confirm'],2.5),
+    (pos['空白'], 1),
+    (pos['确认1'], 1.5),
+
+]
+luoyangrichang1 = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['洛阳'], 0.5),
+    (pos['洛阳出发'], 1),
+    (pos['洛阳武馆1'], 5),
+    (pos['biaoju1'], 4),
+    (pos['biaoju2'], 4),
+    (pos['biaoju3'], 4),
+    (pos['边栏2'], 4),
+    (pos['空白'], 0.4),
+    (pos['确认1'], 1),
+    (pos['空白'], 0.4),
+    (pos['确认3'], 1),
+    (pos['空白'], 0.4),
+    (pos['确认1'], 1),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    ((pos['xuanren_bottom'], pos['xuanren_top']), 1.5),
+    (pos['xuanren_bottom'],2.5),
+    (pos['xuanren_bottom_confirm'],2.5),
+    (pos['空白'], 1),
+    (pos['空白'], 1.5),
+    (pos['shangren'], 1.5),
+    (pos['边栏2'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),
+    (pos['zhifuhuokuan'], 1.5),
+]
+kuileixiuwei = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['洛阳'], 0.5),
+    (pos['洛阳出发'], 1),
+    (pos['洛阳武馆1'], 5),
+    (pos['biaoju1'], 4),
+    (pos['biaoju2'], 4),
+    (pos['biaoju3'], 4),
+    (pos['shangren'], 1.5),
+    (pos['kuilei1'], 1.5),
+    (pos['kuilei2'], 5.5),
+    (pos['kuilei3'], 5.5),
+    (pos['边栏2'], 4.5),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),
+    (pos['xuanren2'], 2.1),
+    (pos['xuanren2_confirm'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),  # 1 套路， 2 内功 3 轻功
+    (pos['确认5'], 6.5),  # 5 个木人
+    (pos['空白'], 90),
+]
+luoyangrichang2 = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['洛阳'], 0.5),
+    (pos['洛阳出发'], 1),
+    (pos['洛阳武馆1'], 5),
+    (pos['biaoju1'], 4),
+    (pos['biaoju2'], 4),
+    (pos['biaoju3'], 4),
+    (pos['边栏2'], 4),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),
+    (pos['空白'], 2.3),
+]
+pos['hangzhou1'] = (145,1434)
+pos['hangzhou2'] = (153,1149)
+pos['hangzhou3'] = (457,631)
+pos['xuanren3'] = (1300,830)
+pos['xuanren3_confirm'] = (1488,830)
+hangzhouxiuwei = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上杭州'], 0.5),
+    (pos['右上杭州出发'], 1),
+    (pos['hangzhou1'], 5.5),
+    (pos['hangzhou2'], 4),
+    (pos['hangzhou3'], 4),
+    (pos['边栏2'], 4),
+    (pos['空白'], 0.3),
+    (pos['确认2'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['确认2'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['确认1'], 1.5),
+    (pos['xuanren3'], 2.1),
+    (pos['xuanren3_confirm'], 1.5),
+    (pos['空白'], 0.3),
+    (pos['空白'], 2.3),
+]
 bear1 = [
     (pos['烟雨江湖'], 1),
     (pos['包裹'], 0.5),
     (pos['叫唤马车'], 0.5),
     ((pos['地图上端'], pos['左下角']), 1),
-    ((pos['地图上端'], pos['左上角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
     (pos['右上幽州'], 0.5),
     (pos['右上幽州出发'], 1),
     (pos['幽州1'], 3.5),
@@ -253,9 +999,9 @@ bear1 = [
     (pos['长白4'], 5.5),
     (pos['长白5'], 5.5),
     (pos['边栏2'], 2.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),  # duplicate preserved
 ]
 bear2 = [
     (pos['烟雨江湖'], 1),
@@ -263,15 +1009,16 @@ bear2 = [
     (pos['包裹'], 0.5),
     (pos['叫唤马车'], 0.5),
     ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
     (pos['右上姑苏'], 0.5),
     (pos['右上姑苏出发'], 1),
     (pos['姑苏1'], 6.5),
     (pos['姑苏2'], 3.5),
     (pos['姑苏3'], 3.5),
     (pos['边栏2'], 5.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
 ]
 bear3 = [
     (pos['烟雨江湖'], 1),
@@ -287,9 +1034,9 @@ bear3 = [
     (pos['杭州4'], 3.5),
     (pos['杭州5'], 3.5),
     (pos['边栏2'], 3.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
 ]
 bear4 = [
     (pos['烟雨江湖'], 1),
@@ -302,9 +1049,9 @@ bear4 = [
     (pos['泉州1'], 6.5),
     (pos['泉州2'], 2.5),
     (pos['边栏2'], 3.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
 ]
 bear5 = [
     (pos['烟雨江湖'], 1),
@@ -319,9 +1066,9 @@ bear5 = [
     (pos['洛阳3'], 3.5),
     (pos['洛阳4'], 3.5),
     (pos['边栏2'], 3.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
 ]
 bear6 = [
     (pos['烟雨江湖'], 1),
@@ -335,9 +1082,9 @@ bear6 = [
     (pos['南阳渡2'], 3.5),
     (pos['南阳渡3'], 3.5),
     (pos['边栏2'], 3.5),
-    (pos['空白'], 1),
-    (pos['确认'], 4.5),
-    (pos['空白'], 1),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 0.5),
 ]
 sleep1 = [
     (pos['烟雨江湖'], 1),
@@ -350,8 +1097,26 @@ sleep1 = [
     (pos['乌思雪原出发'], 1),
     (pos['乌思雪原1'], 6.5),
     (pos['边栏2'], 3.5),
-    (pos['确认2'], 4.5),
-    (pos['确认'], 4.5),
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.5),
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+]
+sleep2 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    ((pos['地图下端'], pos['右下角']), 1),
+    (pos['乌思雪原'], 0.5),
+    (pos['乌思雪原出发'], 1),
+    (pos['乌思雪原1'], 6.5),
+    (pos['边栏2'], 3.5),
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.5),
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.5),
 ]
 bear7 = [
     (pos['烟雨江湖'], 1),
@@ -359,22 +1124,871 @@ bear7 = [
     (pos['包裹'], 0.5),
     (pos['叫唤马车'], 0.5),
     ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
     (pos['塞北'], 0.5),
     (pos['塞北出发'], 1),
     (pos['塞北1'], 6.5),
     (pos['塞北2'], 4.5),
-    (pos['边栏2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
     (pos['塞北3'], 4.5),
     (pos['边栏2'], 3.5),  # Duplicate preserved
-    (pos['确认'], 4.5),
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
     (pos['塞北4'], 4.5),
     (pos['边栏2'], 3.5),  # Duplicate preserved
-    (pos['确认'], 4.5),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
     (pos['塞北5'], 4.5),
     (pos['边栏2'], 3.5),  # Duplicate preserved
-    (pos['确认'], 4.5),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
     (pos['塞北6'], 4.5),
     (pos['边栏2'], 3.5),  # Duplicate preserved
-    (pos['确认'], 4.5),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+
+bear8 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['落霞镇'], 0.5),
+    (pos['落霞镇出发'], 1),
+    (pos['落霞镇1'], 4.5),
+    (pos['落霞镇2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+
+bear9 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['峨眉山'], 0.5),
+    (pos['峨眉山出发'], 1),
+    (pos['峨眉山1'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+
+bear10 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['明月峰'], 0.5),
+    (pos['明月峰出发'], 1),
+    (pos['明月峰1'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+
+bear11 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['龙泉镇'], 0.5),
+    (pos['龙泉镇出发'], 1),
+    (pos['龙泉镇1'], 4.5),
+    (pos['龙泉镇2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+bear12 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['双王镇'], 0.5),
+    (pos['双王镇出发'], 1),
+    (pos['双王镇1'], 4.5),
+    (pos['双王镇2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+bear13 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['落霞镇'], 0.5),
+    (pos['落霞镇出发'], 1),
+    (pos['落霞镇华山1'], 4.5),
+    (pos['落霞镇华山2'], 4),
+    (pos['落霞镇华山3'], 4),
+    (pos['华山1'], 10.5),
+    (pos['华山2'], 5.5),
+    (pos['边栏2'], 7.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+bear14 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['十方集'], 0.5),
+    (pos['十方集出发'], 1),
+    (pos['十方集1'], 4.5),
+    (pos['十方集2'], 4.0),
+    (pos['十方集3'], 6.5),
+    (pos['天山1'], 5.5),
+    (pos['天山2'], 5.5),
+    (pos['天山3'], 5.5),
+    (pos['天山4'], 5.5),
+    (pos['天山5'], 5.5),
+    (pos['天山6'], 5.5),
+    (pos['边栏2'], 7.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['天山7'], 2.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['天山8'], 2.5),
+    (pos['边栏2'], 4.0),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['天山9'], 2.5),
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+pig1 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['南岭'], 0.5),
+    (pos['南岭出发'], 1),
+    (pos['南岭1'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+
+pig2 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['成都'], 0.5),
+    (pos['成都出发'], 1),
+    (pos['成都1'], 4.5),
+    (pos['成都2'], 4.5),
+    (pos['成都3'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+tanqin = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['紫阳琴'], 0.5),
+    (pos['弹奏'], 0.5),
+    (pos['阳关三叠'], 0.5),
+    (pos['空白'], 1.5),
+]
+hexia1 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['龙泉镇'], 0.5),
+    (pos['龙泉镇出发'], 1),
+    (pos['龙泉镇河虾'], 4.5),
+    (pos['边栏1'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.0),     # Duplicate preserved
+    (pos['空白'], 3.5),
+]
+hexia2 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上姑苏'], 0.5),
+    (pos['右上姑苏出发'], 1),
+    (pos['姑苏河虾1'], 4.5),
+    (pos['姑苏河虾2'], 3.5),
+    (pos['边栏1'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.0),     # Duplicate preserved
+    (pos['空白'], 3.5),
+]
+xiangjiao = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['明月峰'], 0.5),
+    (pos['明月峰出发'], 1),
+    (pos['明月峰香蕉1'], 2.5),
+    (pos['边栏1'], 1.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.0),  # Duplicate preserved
+    (pos['明月峰香蕉2'], 2.5),
+    (pos['明月峰香蕉3'], 2.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+lianou = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['明月峰'], 0.5),
+    (pos['明月峰出发'], 1),
+    (pos['明月峰莲藕1'], 2.5),
+    (pos['边栏1'], 1.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.0),  # Duplicate preserved
+    (pos['明月峰莲藕2'], 2.5),
+    (pos['明月峰莲藕3'], 2.5),
+    (pos['边栏1'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+pingguo = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['落霞镇'], 0.5),
+    (pos['落霞镇出发'], 1),
+    (pos['落霞镇华山1'], 4.5),
+    (pos['落霞镇华山2'], 4),
+    (pos['落霞镇华山3'], 4),
+    (pos['华山1'], 10.5),
+    (pos['华山苹果1'], 3.5),
+    (pos['华山苹果2'], 3.5),
+    (pos['华山苹果3'], 3.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+shanzha = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['泰山'], 0.5),
+    (pos['泰山出发'], 1),
+    (pos['泰山山楂1'], 3.5),
+    (pos['泰山山楂2'], 3.5),
+    (pos['泰山山楂3'], 3.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+xigua = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['左上角']), 1),
+    ((pos['地图下端'], pos['左上角']), 1),
+    (pos['龙泉镇'], 0.5),
+    (pos['龙泉镇出发'], 1),
+    (pos['龙泉镇西瓜1'], 3.5),
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['龙泉镇西瓜2'], 3.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['龙泉镇西瓜3'], 3.5),
+    (pos['边栏2'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+jianshui = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['峨眉山'], 0.5),
+    (pos['峨眉山出发'], 1),
+    (pos['峨眉山碱水1'], 4.5),
+    (pos['峨眉山碱水2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+jiazhai = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    (pos['返回家宅'], 0.5),
+    (pos['空白'], 0.5),
+    (pos['确认2'], 1.0),     # Duplicate preserved
+    (pos['家宅1'], 5.5),     # Duplicate preserved
+    (pos['家宅2'], 3.5),     # Duplicate preserved
+    (pos['家宅羊圈1'], 3.5),     # Duplicate preserved
+    (pos['边栏2'], 1.5),  # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['家宅杂草'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['家宅羊圈2'], 2.0),     # Duplicate preserved
+    (pos['边栏2'], 1.5),  # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['家宅杂草'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['家宅羊圈3'], 3.0),     # Duplicate preserved
+    (pos['边栏2'], 1.5),  # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['家宅杂草'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['家宅牛棚4'], 3.0),     # Duplicate preserved
+    (pos['边栏2'], 1.5),  # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['家宅杂草'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.6),     # Duplicate preserved
+    (pos['空白'], 1.0),     # Duplicate preserved
+]
+save = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['保存'], 2.5),
+    (pos['保存确认'], 2.5),
+    (pos['空白'], 4.5),
+]
+bear_tianshan = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['十方集'], 0.5),
+    (pos['十方集出发'], 1),
+    (pos['十方集1'], 4.5),
+    (pos['十方集2'], 4.0),
+    (pos['十方集3'], 6.5),
+    (pos['天山1'], 5.5),
+    (pos['天山2'], 5.5),
+]
+wenxiangjiao = [
+    (pos['烟雨江湖'], 1),
+    (pos['布阵'], 1),
+    (pos['梅花阵'], 1),
+    (pos['启用阵法'], 1),
+    (pos['阴阳阵'], 1),
+    (pos['启用阵法'], 1),
+    (pos['离开阵法'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['沧州'], 0.5),
+    (pos['沧州出发'], 1),
+    (pos['沧州闻香教'], 3.5),
+    (pos['边栏2'], 2.5),
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 1.0),  # Duplicate preserved
+    (pos['空白'], 1.5),  # Duplicate preserved
+    (pos['确认'], 1.5),
+    (pos['空白'], 1.5),  # Duplicate preserved
+    (pos['空白'], 5.0),  # Duplicate preserved
+    (pos['闻香教1'], 6.0),  # Duplicate preserved
+    (pos['闻香教2'], 5.0),  # Duplicate preserved
+    (pos['闻香教3'], 4.5),  # Duplicate preserved
+    (pos['闻香教4'], 4.5),  # Duplicate preserved
+    (pos['闻香教5'], 4.5),  # Duplicate preserved
+    (pos['闻香教6'], 5.0),  # Duplicate preserved
+    (pos['闻香教7'], 2.5),  # Duplicate preserved
+    (pos['闻香教8'], 8.5),  # Duplicate preserved
+    (pos['闻香教9'], 4.0),  # Duplicate preserved
+    (pos['闻香教10'], 5),  # Duplicate preserved
+    (pos['闻香教11'], 5.0),  # Duplicate preserved
+    (pos['闻香教12'], 5.5),  # Duplicate preserved
+    (pos['闻香教13'], 5.5),  # Duplicate preserved
+    (pos['空白'], 1.5),
+    (pos['确认'], 2.5),
+    (pos['wenxiangxu'], 4.5),  # Duplicate preserved
+    (pos['边栏2'], 2.5),
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 1.0),  # Duplicate preserved
+    (pos['空白'], 0.5),  # Duplicate preserved
+    (pos['确认'], 1.5),
+    (pos['空白'], 1.0),  # Duplicate preserved
+    (pos['空白'], 0.5),  # Duplicate preserved
+    (pos['确认'], 1.5),
+    (pos['空白'], 3.5),  # Duplicate preserved
+    (pos['闻香教1'], 6.0),  # Duplicate preserved
+    (pos['闻香教2'], 4.5),  # Duplicate preserved
+    (pos['闻香教3'], 4.5),  # Duplicate preserved
+    (pos['闻香教4'], 4.5),  # Duplicate preserved
+    (pos['闻香教5'], 4.5),  # Duplicate preserved
+    (pos['闻香教6'], 4.5),  # Duplicate preserved
+    (pos['闻香教7'], 3.5),  # Duplicate preserved
+    (pos['闻香教8'], 8.5),  # Duplicate preserved
+    (pos['闻香教9'], 4.0),  # Duplicate preserved
+    (pos['闻香教10'], 5.0),  # Duplicate preserved
+    (pos['闻香教11'], 4.5),  # Duplicate preserved
+    (pos['闻香教12'], 5.5),  # Duplicate preserved
+    (pos['闻香教13'], 5.5),  # Duplicate preserved
+    (pos['空白'], 1.5),
+    (pos['确认'], 2.5),
+]
+liushibieyuan = [
+    (pos['烟雨江湖'], 1),
+    #(pos['空白'], 0.5),
+    #(pos['包裹'], 0.5),
+    #(pos['叫唤马车'], 0.5),
+    #((pos['地图上端'], pos['左下角']), 1),
+    #((pos['地图上端'], pos['左下角']), 1),
+    #(pos['右上幽州'], 0.5),
+    #(pos['右上幽州出发'], 1),
+    #(pos['幽州1'], 3.5),
+    #(pos['幽州2'], 3.5),
+    #(pos['幽州刘氏别院'], 3.5),
+    #(pos['边栏2'], 2.5),
+    #(pos['空白'], 0.5),
+    #(pos['确认'], 1.5),
+    #(pos['空白'], 1.0),  # Duplicate preserved
+    #(pos['空白'], 0.5),  # Duplicate preserved
+    #(pos['确认'], 1.5),
+    #(pos['刘氏别院1'], 6.0),  # Duplicate preserved
+    (pos['刘氏别院2'], 6.0),  # Duplicate preserved
+    (pos['刘氏别院3'], 6.0),  # Duplicate preserved
+    (pos['刘氏别院4'], 6.0),  # Duplicate preserved
+    (pos['刘氏别院5'], 6.0),  # Duplicate preserved
+    #(pos['刘氏别院地窖'], 4.0),  # Duplicate preserved
+    #(pos['边栏2'], 2.5),
+    #(pos['空白'], 0.5),
+    #(pos['确认'], 1.5),
+    #(pos['空白'], 1.0),  # Duplicate preserved
+    #(pos['空白'], 0.5),  # Duplicate preserved
+    #(pos['确认'], 1.5),
+    #(pos['刘氏别院地窖1'], 4.0),  # Duplicate preserved
+    #(pos['刘氏别院地窖2'], 4.0),  # Duplicate preserved
+    #(pos['刘氏别院地窖3'], 4.0),  # Duplicate preserved
+    #(pos['刘氏别院地窖离开'], 4.0),  # Duplicate preserved
+]
+
+suancai = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上幽州'], 0.5),
+    (pos['右上幽州出发'], 1),
+    (pos['幽州1'], 3.5),
+    (pos['幽州2'], 2.5),
+    (pos['幽州3'], 2.5),
+    (pos['幽州4'], 2.5),
+    (pos['长白1'], 6.5),
+    (pos['长白2'], 3.5),
+    (pos['长白酸菜1'], 4.5),
+    (pos['长白酸菜2'], 5.5),
+    (pos['长白酸菜3'], 3.5),
+    (pos['边栏2'], 2.5),
+    (pos['空白'], 1.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 3.0),  # Duplicate preserved
+    (pos['空白'], 2.5),  # Duplicate preserved
+    (pos['空白'], 4.0),  # Duplicate preserved
+    (pos['确认'], 2.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
+    (pos['空白'], 1.0),  # Duplicate preserved
+    (pos['边栏2'], 2.5),
+    (pos['空白'], 1.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 3.0),  # Duplicate preserved
+    (pos['空白'], 2.5),  # Duplicate preserved
+    (pos['空白'], 4.0),  # Duplicate preserved
+    (pos['确认'], 2.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
+    (pos['空白'], 1.0),  # Duplicate preserved
+    (pos['边栏2'], 2.5),
+    (pos['空白'], 1.5),
+    (pos['确认'], 1.5),
+    (pos['空白'], 3.0),  # Duplicate preserved
+    (pos['空白'], 2.5),  # Duplicate preserved
+    (pos['空白'], 4.0),  # Duplicate preserved
+    (pos['确认'], 2.5),
+    (pos['空白'], 0.5),  # Duplicate preserved
+    (pos['空白'], 1.0),  # Duplicate preserved
+]
+changbaipingguo = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上幽州'], 0.5),
+    (pos['右上幽州出发'], 1),
+    (pos['幽州1'], 3.5),
+    (pos['幽州2'], 2.5),
+    (pos['幽州3'], 2.5),
+    (pos['幽州4'], 2.5),
+    (pos['长白1'], 6.5),
+    (pos['长白2'], 3.5),
+    (pos['长白酸菜1'], 4.0),
+    (pos['长白酸菜2'], 5.0),
+    (pos['长白苹果'], 4.0),
+    (pos['边栏1'], 2.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+    (pos['边栏1'], 4.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['确认'], 0.5),     # Duplicate preserved
+]
+
+bear15 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图下端'], pos['右上角']), 1),
+    ((pos['地图下端'], pos['右上角']), 1),
+    (pos['凤鸣集'], 0.5),
+    (pos['凤鸣集出发'], 1),
+    (pos['凤鸣集1'], 4.5),
+    (pos['凤鸣集2'], 4.5),
+    (pos['凤鸣集3'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+cow1 = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['塞北'], 0.5),
+    (pos['塞北出发'], 1),
+    (pos['塞北祁连山1'], 4.5),
+    (pos['塞北祁连山2'], 4.5),
+    (pos['塞北祁连山3'], 4.5),
+    (pos['塞北祁连山4'], 4.5),
+    (pos['塞北祁连山5'], 4.5),
+    (pos['祁连山1'], 4.5),
+    (pos['祁连山2'], 4.5),
+    (pos['祁连山3'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['祁连山4'], 4.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+]
+cow2 = [
+(pos['烟雨江湖'], 1),
+(pos['包裹'], 0.5),
+(pos['叫唤马车'], 0.5),
+((pos['地图上端'], pos['左下角']), 1),
+((pos['地图上端'], pos['左下角']), 1),
+(pos['右上幽州'], 0.5),
+(pos['右上幽州出发'], 1),
+(pos['幽州落日牧场1'],4.5),
+(pos['幽州落日牧场2'],3.5),
+(pos['边栏1'], 3.5),  # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['确认2'], 1.0),  # Duplicate preserved
+(pos['幽州落日牧场3'],1.5),
+(pos['幽州落日牧场4'],2.5),
+(pos['西风古道1'],6.0),
+(pos['西风古道2'],3.5),
+(pos['西风古道3'],3.0),
+(pos['落日牧场1'],6.0),
+(pos['边栏2'], 5.5),  # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['确认'], 1.0),     # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['落日牧场2'],2.5),
+(pos['落日牧场3'],3.5),
+(pos['边栏2'], 5.5),  # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['确认'], 1.0),     # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['落日牧场4'],3.0),
+(pos['边栏2'], 5.5),  # Duplicate preserved
+(pos['空白'], 0.5),
+(pos['确认'], 1.0),     # Duplicate preserved
+(pos['空白'], 0.5),
+]
+changbaizijin = [
+    (pos['烟雨江湖'], 1),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['左下角']), 1),
+    ((pos['地图上端'], pos['左下角']), 1),
+    (pos['右上幽州'], 0.5),
+    (pos['右上幽州出发'], 1),
+    (pos['幽州1'], 3.5),
+    (pos['幽州2'], 2.5),
+    (pos['幽州3'], 2.5),
+    (pos['幽州4'], 2.5),
+    (pos['长白1'], 6.5),
+    (pos['长白2'], 3.5),
+    (pos['长白酸菜1'], 4.5),
+    (pos['长白紫金'], 4.5),
+    (pos['边栏2'], 4.5),  # Duplicate preserved
+    (pos['确认'], 1.5),     # Duplicate preserved
+    (pos['空白'], 8.5),
+    #(pos['长白酸菜2'], 5.5),
+]
+songjiu = [
+    (pos['烟雨江湖'], 1),
+    (pos['空白'], 0.5),
+    (pos['包裹'], 0.5),
+    (pos['叫唤马车'], 0.5),
+    ((pos['地图上端'], pos['右下角']), 1),
+    (pos['落霞镇'], 0.5),
+    (pos['落霞镇出发'], 1),
+    (pos['落霞铁匠1'], 4.5),
+    (pos['落霞铁匠2'], 3.5),
+    (pos['边栏2'], 3.5),  # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['确认5'], 1.0),     # Duplicate preserved
+    (pos['给予酒食'], 1.0),     # Duplicate preserved
+    (pos['酒食栏1'], 1.0),     # Duplicate preserved
+    (pos['确定给予'], 1.0),     # Duplicate preserved
+    (pos['空白'], 0.5),
+    (pos['空白'], 1.5),
+    (pos['空白'], 1.5),
+    (pos['空白'], 5.5),
+    (pos['空白'], 4.5),
 ]
 
