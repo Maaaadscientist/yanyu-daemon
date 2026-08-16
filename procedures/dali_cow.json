@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "name": "dali_cow",
+  "enabled": true,
+  "description": "大理牛：复用公共马车与绕障片段，在 (28,11) 宰杀并验证条目消失。",
+  "map": "大理",
+  "start_coordinate": [32, 18],
+  "target_coordinate": [28, 11],
+  "schedule": {
+    "interval_minutes": 180.0,
+    "initial_delay_minutes": 0.0,
+    "lead_seconds": 75.0,
+    "before_routes": ["sleep1"],
+    "after_routes": ["save"]
+  },
+  "recorded_at": "2026-08-17T01:41:13",
+  "raw_recording": "recordings/dali_cow_20260816_235618.procedure.json",
+  "actions": [
+    {
+      "type": "include",
+      "procedure": "_dali_travel_to_cow_area"
+    },
+    {
+      "type": "click",
+      "label": "选择牛",
+      "before_delay": 0.5,
+      "wait_until_scheduled": true,
+      "point": [1950, 697],
+      "target_text": "牛",
+      "target_required": true,
+      "exact_text": true,
+      "text_stable_samples": 1,
+      "text_region": [0.8699, 0.3826, 0.9862, 0.4732]
+    },
+    {
+      "type": "click",
+      "label": "宰杀牛",
+      "before_delay": 0.1,
+      "point": [1282, 758],
+      "target_text": "宰杀",
+      "target_required": true,
+      "exact_text": true,
+      "text_stable_samples": 1,
+      "text_region": [0.5501, 0.4182, 0.6708, 0.5125],
+      "refresh_anchor": true
+    },
+    {
+      "type": "wait_text",
+      "label": "确认牛条目消失",
+      "text": "牛",
+      "present": false,
+      "exact_text": true,
+      "region": [0.8699, 0.3826, 0.9862, 0.4732],
+      "timeout": 5.0,
+      "stable_samples": 2
+    }
+  ]
+}

@@ -14,7 +14,7 @@ def get_window_by_name(app_name):
         Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
         Quartz.kCGNullWindowID,
     )
-    for window in window_info:
+    for window in window_info or []:
         owner_name = window.get("kCGWindowOwnerName", "")
         title = window.get("kCGWindowName", "")
         if app_name in owner_name or app_name in title:

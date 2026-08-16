@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "name": "_dali_travel_to_cow_area",
+  "enabled": false,
+  "library": true,
+  "description": "公共片段：马车票前往大理并从 (32,18) 绕障到 (28,11)。",
+  "map": "大理",
+  "start_coordinate": [32, 18],
+  "target_coordinate": [28, 11],
+  "actions": [
+    {
+      "type": "assert_not_state",
+      "label": "确认当前不在大理（同城马车图标会被角色标记覆盖）",
+      "expect": {"map": "大理"},
+      "allow_unknown": true
+    },
+    {
+      "type": "click",
+      "label": "打开包袱",
+      "before_delay": 0.5,
+      "point": [485, 1605]
+    },
+    {
+      "type": "click",
+      "label": "叫唤马车",
+      "before_delay": 1.0,
+      "point": [620, 1221],
+      "target_text": "叫唤马车",
+      "target_required": true,
+      "exact_text": true,
+      "text_region": [0.2143, 0.695, 0.3918, 0.7919]
+    },
+    {
+      "type": "drag",
+      "label": "地图向上移动以显示南部",
+      "before_delay": 1.0,
+      "start": [1100, 1400],
+      "end": [1100, 849],
+      "duration": 1.0
+    },
+    {
+      "type": "drag",
+      "label": "地图向右移动使大理面板完整可见",
+      "before_delay": 0.5,
+      "start": [449, 1049],
+      "end": [1149, 1049],
+      "duration": 1.0
+    },
+    {
+      "type": "aligned_click",
+      "label": "按世界地图特征对齐后选择大理马车图标",
+      "before_delay": 0.5,
+      "point": [1130, 1428],
+      "alignment_image": "assets/world_map_reference.jpg",
+      "min_matches": 40,
+      "min_inlier_ratio": 0.45,
+      "expect_text": "大理",
+      "expect_text_exact": true,
+      "expect_text_region": [0.18, 0.43, 0.52, 0.72],
+      "expect_text_stable_samples": 1,
+      "timeout": 6.0
+    },
+    {
+      "type": "click",
+      "label": "确定前往大理",
+      "before_delay": 0.8,
+      "point": [738, 1537],
+      "target_text": "确定前往",
+      "target_required": true,
+      "exact_text": true,
+      "text_region": [0.15, 0.86, 0.75, 0.995],
+      "expect": {"map": "大理", "coordinate": [32, 18]},
+      "observed_seconds": 1.692,
+      "timeout": 15.0
+    },
+    {
+      "type": "click",
+      "label": "离开马车落点",
+      "before_delay": 0.3,
+      "point": [1198, 819],
+      "expect": {"map": "大理", "coordinate": [33, 18]},
+      "observed_seconds": 0.538,
+      "timeout": 8.0
+    },
+    {
+      "type": "click",
+      "label": "穿过城门",
+      "before_delay": 0.2,
+      "point": [1330, 733],
+      "expect": {"map": "大理", "coordinate": [35, 15]},
+      "observed_seconds": 1.232,
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "到山崖楼梯下方",
+      "before_delay": 0.2,
+      "point": [1115, 649],
+      "expect": {"map": "大理", "coordinate": [35, 12]},
+      "observed_seconds": 0.98,
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "绕到高地入口",
+      "before_delay": 0.2,
+      "point": [1398, 609],
+      "expect": {"map": "大理", "coordinate": [35, 7]},
+      "observed_seconds": 1.26,
+      "timeout": 12.0
+    },
+    {
+      "type": "click",
+      "label": "通过楼梯进入高地",
+      "before_delay": 0.2,
+      "point": [574, 720],
+      "expect": {"map": "大理", "coordinate": [32, 8]},
+      "observed_seconds": 1.413,
+      "timeout": 12.0
+    },
+    {
+      "type": "click",
+      "label": "沿高地向西",
+      "before_delay": 0.2,
+      "point": [590, 729],
+      "expect": {"map": "大理", "coordinate": [29, 8]},
+      "observed_seconds": 0.847,
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "接近牛棚",
+      "before_delay": 0.2,
+      "point": [729, 899],
+      "expect": {"map": "大理", "coordinate": [28, 9]},
+      "observed_seconds": 0.767,
+      "timeout": 8.0
+    },
+    {
+      "type": "click",
+      "label": "绕到牛棚屋后",
+      "before_delay": 0.2,
+      "point": [689, 899],
+      "expect": {"map": "大理", "coordinate": [27, 11]},
+      "observed_seconds": 0.837,
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "绕过屋顶到牛棚",
+      "before_delay": 0.2,
+      "point": [1179, 899],
+      "expect": {"map": "大理", "coordinate": [28, 11]},
+      "observed_seconds": 0.605,
+      "timeout": 10.0
+    }
+  ]
+}

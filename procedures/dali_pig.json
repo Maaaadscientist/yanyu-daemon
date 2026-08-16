@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "name": "dali_pig",
+  "enabled": true,
+  "description": "大理猪：复用公共马车与绕障片段，再沿实测六段路线从 (28,11) 到 (29,3) 后宰杀。",
+  "map": "大理",
+  "start_coordinate": [32, 18],
+  "target_coordinate": [29, 3],
+  "schedule": {
+    "interval_minutes": 60.0,
+    "initial_delay_minutes": 0.0,
+    "lead_seconds": 75.0,
+    "before_routes": ["sleep1"],
+    "after_routes": ["save"]
+  },
+  "recorded_at": "2026-08-17T02:59:49",
+  "raw_recording": "recordings/dali_pig_20260817_021133.procedure.json",
+  "actions": [
+    {
+      "type": "include",
+      "procedure": "_dali_travel_to_cow_area"
+    },
+    {
+      "type": "click",
+      "label": "从牛棚向西避开屋顶",
+      "before_delay": 0.2,
+      "point": [800, 750],
+      "expect": {"map": "大理", "coordinate": [26, 11]},
+      "timeout": 8.0
+    },
+    {
+      "type": "click",
+      "label": "转向猪圈南侧道路",
+      "before_delay": 0.2,
+      "point": [1100, 800],
+      "expect": {"map": "大理", "coordinate": [27, 10]},
+      "timeout": 8.0
+    },
+    {
+      "type": "click",
+      "label": "沿道路向北",
+      "before_delay": 0.2,
+      "point": [1119, 760],
+      "expect": {"map": "大理", "coordinate": [27, 8]},
+      "observed_seconds": 1.168,
+      "timeout": 8.0
+    },
+    {
+      "type": "click",
+      "label": "绕到猪圈南侧",
+      "before_delay": 0.2,
+      "point": [1300, 800],
+      "expect": {"map": "大理", "coordinate": [29, 6]},
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "绕过猪圈围栏",
+      "before_delay": 0.2,
+      "point": [1120, 650],
+      "expect": {"map": "大理", "coordinate": [28, 3]},
+      "timeout": 12.0
+    },
+    {
+      "type": "click",
+      "label": "到达猪的位置",
+      "before_delay": 0.2,
+      "point": [1150, 850],
+      "expect": {"map": "大理", "coordinate": [29, 3]},
+      "observed_seconds": 3.147,
+      "timeout": 10.0
+    },
+    {
+      "type": "click",
+      "label": "选择猪（OCR 行定位 + 左侧图标偏移）",
+      "before_delay": 0.5,
+      "wait_until_scheduled": true,
+      "point": [1860, 704],
+      "target_text": "猪",
+      "target_required": true,
+      "exact_text": true,
+      "text_stable_samples": 1,
+      "text_region": [0.8888, 0.3807, 0.9877, 0.4732],
+      "text_click_offset": [-111, 7]
+    },
+    {
+      "type": "click",
+      "label": "宰杀猪",
+      "before_delay": 0.1,
+      "point": [1282, 758],
+      "target_text": "宰杀",
+      "target_required": true,
+      "exact_text": true,
+      "text_stable_samples": 1,
+      "text_region": [0.5501, 0.4182, 0.6708, 0.5125],
+      "refresh_anchor": true
+    },
+    {
+      "type": "wait_text",
+      "label": "确认猪条目消失",
+      "text": "猪",
+      "present": false,
+      "exact_text": true,
+      "region": [0.8888, 0.3807, 0.9877, 0.4732],
+      "timeout": 5.0,
+      "stable_samples": 2
+    }
+  ]
+}

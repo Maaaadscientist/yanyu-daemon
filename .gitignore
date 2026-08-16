@@ -5,6 +5,12 @@ __pycache__/
 venv/
 
 event_log.txt
+scheduler_state.json
+scheduler_state.json.tmp
+scheduler_events.jsonl
+scheduler_captures/
+runtime_profiles.json
+runtime_profiles.json.tmp
 screenshot_high_res_*.png
 runs/
 recordings/

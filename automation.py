@@ -1,9 +1,11 @@
+import math
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Iterable, Mapping, Tuple, Union
 
+import cv2
 import numpy as np
 import pyautogui
 from PIL import Image
@@ -34,6 +36,31 @@ class WindowInfo:
     width: float
     height: float
     number: int | None = None
+    owner_pid: int | None = None
+
+
+@dataclass(frozen=True)
+class RapidClickResult:
+    clicked_at: tuple[datetime, ...]
+    gaps: tuple[float, ...]
+
+
+class RapidClickTimingError(RuntimeError):
+    pass
+
+
+class FeatureAlignmentError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class FeatureAlignmentResult:
+    point: Point
+    matches: int
+    inliers: int
+    inlier_ratio: float
+    scale: float
+    rotation_degrees: float
 
 
 class GameAutomation:
@@ -59,6 +86,9 @@ class GameAutomation:
         self.window_width = window_info.width
         self.window_height = window_info.height
         self.window_number = window_info.number
+        self.window_owner_pid = window_info.owner_pid
+        self.reference_width = image_width
+        self.reference_height = image_height
         self.scale_x = window_info.width / image_width
         self.scale_y = window_info.height / image_height
         self.position_names = position_names or {}
@@ -70,6 +100,228 @@ class GameAutomation:
     def screen_point(self, point: Point) -> tuple[float, float]:
         x, y = point
         return self.window_left + x * self.scale_x, self.window_top + y * self.scale_y
+
+    def focus_window(self, *, settle_seconds: float = 0.2, dry_run: bool = False) -> bool:
+        if dry_run:
+            return True
+
+        activated = False
+        if self.window_owner_pid:
+            try:
+                from AppKit import NSApplicationActivateIgnoringOtherApps, NSRunningApplication
+
+                application = NSRunningApplication.runningApplicationWithProcessIdentifier_(self.window_owner_pid)
+                if application:
+                    activated = bool(
+                        application.activateWithOptions_(NSApplicationActivateIgnoringOtherApps)
+                    )
+            except Exception as exc:
+                print(f"Cannot activate the game window through AppKit: {exc}")
+
+        if activated:
+            time.sleep(max(0.0, settle_seconds))
+        return activated
+
+    def click_reference(
+        self,
+        point: Point,
+        *,
+        duration: float = 0.1,
+        dry_run: bool = False,
+    ) -> datetime | None:
+        x, y = self.screen_point(point)
+        if dry_run:
+            return None
+        pyautogui.moveTo(x, y, duration=duration)
+        clicked_at = datetime.now()
+        pyautogui.click()
+        return clicked_at
+
+    def drag_reference(
+        self,
+        start: Point,
+        end: Point,
+        *,
+        duration: float = 0.5,
+        dry_run: bool = False,
+    ) -> datetime | None:
+        start_x, start_y = self.screen_point(start)
+        end_x, end_y = self.screen_point(end)
+        if dry_run:
+            return None
+        pyautogui.moveTo(start_x, start_y)
+        time.sleep(0.2)
+        dragged_at = datetime.now()
+        pyautogui.dragTo(end_x, end_y, button="left", duration=duration)
+        time.sleep(0.2)
+        return dragged_at
+
+    def rapid_click_reference(
+        self,
+        points: Iterable[Point],
+        *,
+        intervals: Iterable[float] | float,
+        max_gap_seconds: float,
+        dry_run: bool = False,
+    ) -> RapidClickResult:
+        """Execute every click even if a deadline is missed, then report timing failure."""
+        point_list = list(points)
+        if len(point_list) < 2:
+            raise ValueError("A rapid click sequence requires at least two points.")
+        if isinstance(intervals, (int, float)):
+            interval_list = [float(intervals)] * (len(point_list) - 1)
+        else:
+            interval_list = [float(value) for value in intervals]
+        if len(interval_list) != len(point_list) - 1:
+            raise ValueError("Rapid click intervals must contain one value between each pair of points.")
+        if max_gap_seconds <= 0 or any(value < 0 for value in interval_list):
+            raise ValueError("Rapid click intervals and max_gap_seconds must be non-negative.")
+        if any(value > max_gap_seconds for value in interval_list):
+            raise ValueError("A planned rapid click interval exceeds max_gap_seconds.")
+        if dry_run:
+            return RapidClickResult((), ())
+
+        click_times = []
+        wall_times = []
+        started = time.monotonic()
+        deadline = started
+        old_pause = pyautogui.PAUSE
+        pyautogui.PAUSE = 0
+        try:
+            for index, point in enumerate(point_list):
+                if index:
+                    deadline += interval_list[index - 1]
+                    remaining = deadline - time.monotonic()
+                    if remaining > 0:
+                        time.sleep(remaining)
+                x, y = self.screen_point(point)
+                click_times.append(time.monotonic())
+                wall_times.append(datetime.now())
+                pyautogui.click(x=x, y=y)
+        finally:
+            pyautogui.PAUSE = old_pause
+
+        gaps = tuple(later - earlier for earlier, later in zip(click_times, click_times[1:]))
+        result = RapidClickResult(tuple(wall_times), gaps)
+        missed = [gap for gap in gaps if gap > max_gap_seconds]
+        if missed:
+            raise RapidClickTimingError(
+                f"Rapid click sequence completed, but max gap was {max(missed):.3f}s "
+                f"(limit {max_gap_seconds:.3f}s)."
+            )
+        return result
+
+    def align_reference_point(
+        self,
+        alignment_image: str | Path,
+        point: Point,
+        *,
+        min_matches: int = 40,
+        min_inlier_ratio: float = 0.45,
+        max_rotation_degrees: float = 4.0,
+    ) -> FeatureAlignmentResult:
+        """Map a point from a canonical UI image onto the current captured window."""
+        image_path = Path(alignment_image)
+        if not image_path.is_absolute() and not image_path.exists():
+            image_path = Path(__file__).resolve().parent / image_path
+        if not image_path.exists():
+            raise FeatureAlignmentError(f"Alignment image does not exist: {alignment_image}")
+
+        current_image = self.capture_image()
+        if current_image is None:
+            raise FeatureAlignmentError("Cannot capture the current window for feature alignment.")
+
+        with Image.open(image_path) as opened:
+            canonical_rgb = np.asarray(opened.convert("RGB"))
+        current_rgb = np.asarray(current_image.convert("RGB"))
+        height, width = canonical_rgb.shape[:2]
+        current_rgb = cv2.resize(current_rgb, (width, height), interpolation=cv2.INTER_AREA)
+        canonical_gray = cv2.cvtColor(canonical_rgb, cv2.COLOR_RGB2GRAY)
+        current_gray = cv2.cvtColor(current_rgb, cv2.COLOR_RGB2GRAY)
+
+        # Ignore window chrome and edge controls; the map artwork should drive the transform.
+        mask = np.zeros((height, width), dtype=np.uint8)
+        top = max(1, round(height * 0.04))
+        bottom = max(1, round(height * 0.05))
+        side = max(1, round(width * 0.02))
+        mask[top : height - bottom, side : width - side] = 255
+
+        detector = cv2.ORB_create(nfeatures=5000, fastThreshold=8)
+        canonical_points, canonical_descriptors = detector.detectAndCompute(canonical_gray, mask)
+        current_points, current_descriptors = detector.detectAndCompute(current_gray, mask)
+        if canonical_descriptors is None or current_descriptors is None:
+            raise FeatureAlignmentError("Not enough visual features for alignment.")
+
+        pairs = cv2.BFMatcher(cv2.NORM_HAMMING).knnMatch(
+            canonical_descriptors,
+            current_descriptors,
+            k=2,
+        )
+        matches = [
+            first
+            for pair in pairs
+            if len(pair) == 2
+            for first, second in [pair]
+            if first.distance < 0.75 * second.distance
+        ]
+        if len(matches) < min_matches:
+            raise FeatureAlignmentError(
+                f"Feature alignment found {len(matches)} matches; at least {min_matches} are required."
+            )
+
+        source = np.float32([canonical_points[item.queryIdx].pt for item in matches])
+        destination = np.float32([current_points[item.trainIdx].pt for item in matches])
+        transform, inlier_mask = cv2.estimateAffinePartial2D(
+            source,
+            destination,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=3.0,
+            maxIters=5000,
+            confidence=0.995,
+        )
+        if transform is None or inlier_mask is None:
+            raise FeatureAlignmentError("Cannot estimate a stable feature transform.")
+
+        inliers = int(inlier_mask.sum())
+        inlier_ratio = inliers / len(matches)
+        scale = math.hypot(float(transform[0, 0]), float(transform[1, 0]))
+        rotation_degrees = math.degrees(math.atan2(float(transform[1, 0]), float(transform[0, 0])))
+        if inlier_ratio < min_inlier_ratio:
+            raise FeatureAlignmentError(
+                f"Feature alignment inlier ratio {inlier_ratio:.3f} is below {min_inlier_ratio:.3f}."
+            )
+        if not 0.85 <= scale <= 1.15:
+            raise FeatureAlignmentError(f"Feature alignment scale {scale:.3f} is outside the safe range.")
+        if abs(rotation_degrees) > max_rotation_degrees:
+            raise FeatureAlignmentError(
+                f"Feature alignment rotation {rotation_degrees:.2f} degrees exceeds the safe limit."
+            )
+
+        source_point = np.float32(
+            [
+                [
+                    float(point[0]) * width / self.reference_width,
+                    float(point[1]) * height / self.reference_height,
+                    1.0,
+                ]
+            ]
+        )
+        mapped = source_point @ transform.T
+        mapped_point = (
+            round(float(mapped[0, 0]) * self.reference_width / width),
+            round(float(mapped[0, 1]) * self.reference_height / height),
+        )
+        if not (0 <= mapped_point[0] < self.reference_width and 0 <= mapped_point[1] < self.reference_height):
+            raise FeatureAlignmentError(f"Aligned point is outside the game window: {mapped_point}")
+
+        return FeatureAlignmentResult(
+            point=mapped_point,
+            matches=len(matches),
+            inliers=inliers,
+            inlier_ratio=inlier_ratio,
+            scale=scale,
+            rotation_degrees=rotation_degrees,
+        )
 
     def run_actions(
         self,
@@ -88,7 +340,9 @@ class GameAutomation:
         action_list = list(actions)
         route_label = route_name or "route"
         route_start = time.monotonic()
-        time.sleep(start_delay)
+        if not dry_run:
+            self.focus_window()
+            time.sleep(start_delay)
         for index, (target, delay) in enumerate(action_list, start=1):
             status = self.describe_action(route_label, index, len(action_list), target, delay, route_start, dry_run)
             if print_names or dry_run or step:
@@ -98,26 +352,17 @@ class GameAutomation:
             if step:
                 input("Press Enter to execute this action...")
 
-            time.sleep(delay)
+            if not dry_run:
+                time.sleep(delay)
             if is_point(target):
-                x, y = self.screen_point(target)
-                if dry_run:
-                    continue
-                pyautogui.moveTo(x, y, duration=0.1)
-                pyautogui.click()
+                self.click_reference(target, dry_run=dry_run)
             else:
                 start, end = target
-                start_x, start_y = self.screen_point(start)
-                end_x, end_y = self.screen_point(end)
-                if dry_run:
-                    continue
-                pyautogui.moveTo(start_x, start_y)
-                time.sleep(0.2)
-                pyautogui.dragTo(end_x, end_y, button="left", duration=0.5)
-                time.sleep(0.2)
+                self.drag_reference(start, end, dry_run=dry_run)
             if capture_dir and capture_each_action and not dry_run:
                 self.capture_screenshot(capture_dir, f"{safe_name(route_label)}_{index:03d}")
-        time.sleep(end_delay)
+        if not dry_run:
+            time.sleep(end_delay)
         if capture_dir and not capture_each_action and not dry_run:
             self.capture_screenshot(capture_dir, safe_name(route_label))
 
@@ -165,17 +410,23 @@ class GameAutomation:
             "dry_run": dry_run,
         }
 
-    def capture_screenshot(self, output_dir: str, prefix: str = "capture") -> Path | None:
+    def capture_cg_image(self):
         if not self.window_number:
             return None
 
         region = CGRectMake(self.window_left, self.window_top, self.window_width, self.window_height)
-        image_ref = CGWindowListCreateImage(
+        return CGWindowListCreateImage(
             region,
             kCGWindowListOptionIncludingWindow,
             self.window_number,
             kCGWindowImageDefault,
         )
+
+    def capture_image(self) -> Image.Image | None:
+        image_ref = self.capture_cg_image()
+        if image_ref is None:
+            return None
+
         image_width = CGImageGetWidth(image_ref)
         image_height = CGImageGetHeight(image_ref)
         bytes_per_row = CGImageGetBytesPerRow(image_ref)
@@ -183,7 +434,12 @@ class GameAutomation:
         data = CGDataProviderCopyData(data_provider)
         image_data = np.frombuffer(data, dtype=np.uint8).reshape((image_height, bytes_per_row // 4, 4))
         image_data = image_data[..., [2, 1, 0, 3]]
-        screenshot = Image.fromarray(image_data[:, :image_width, :4])
+        return Image.fromarray(image_data[:, :image_width, :4])
+
+    def capture_screenshot(self, output_dir: str, prefix: str = "capture") -> Path | None:
+        screenshot = self.capture_image()
+        if screenshot is None:
+            return None
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -195,21 +451,28 @@ class GameAutomation:
 
 def get_window_info(window_name: str) -> WindowInfo | None:
     window_list = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, 0)
-
-    for window in window_list:
+    matches = []
+    for window in window_list or []:
         owner_name = window.get("kCGWindowOwnerName", "")
         window_title = window.get("kCGWindowName", "")
 
         if window_name in window_title or window_name in owner_name:
             bounds = window.get("kCGWindowBounds", {})
-            return WindowInfo(
-                left=bounds.get("X", 0),
-                top=bounds.get("Y", 0),
-                width=bounds.get("Width", 0),
-                height=bounds.get("Height", 0),
+            width = float(bounds.get("Width", 0))
+            height = float(bounds.get("Height", 0))
+            if width <= 0 or height <= 0:
+                continue
+            info = WindowInfo(
+                left=float(bounds.get("X", 0)),
+                top=float(bounds.get("Y", 0)),
+                width=width,
+                height=height,
                 number=window.get("kCGWindowNumber"),
+                owner_pid=window.get("kCGWindowOwnerPID"),
             )
-    return None
+            layer_priority = int(window.get("kCGWindowLayer", 0) == 0)
+            matches.append((layer_priority, width * height, info))
+    return max(matches, key=lambda item: item[:2])[2] if matches else None
 
 
 def is_point(target: ActionTarget) -> bool:

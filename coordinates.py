@@ -1,3 +1,5 @@
+# Reference-image pixels used for UI controls and recorded path clicks.
+# These are intentionally separate from the in-game map coordinates below.
 pos = {
 '烟雨江湖':(1047,28),
 '边栏1':(1951,611),
@@ -1992,3 +1994,53 @@ songjiu = [
     (pos['空白'], 4.5),
 ]
 
+
+# In-game grid coordinates read from the right-side map header by macOS Vision.
+# Add new resource locations here even before their click paths have been recorded.
+map_pos = {
+    '大理': {
+        '马车落点': (32, 18),
+        '牛': (28, 11),
+        '猪': (29, 3),
+    },
+}
+
+
+# Smart procedures use verified JSON actions instead of unverified delay-only tuples.
+# Installed procedures/*.json override these disabled route declarations.
+SMART_ROUTES = {
+    'dali_cow': {
+        'schema_version': 1,
+        'name': 'dali_cow',
+        'enabled': False,
+        'description': '大理马车落点 (32,18) 到牛 (28,11)，等待一次真实路线录制',
+        'map': '大理',
+        'start_coordinate': list(map_pos['大理']['马车落点']),
+        'target_coordinate': list(map_pos['大理']['牛']),
+        'schedule': {
+            'interval_minutes': 180,
+            'initial_delay_minutes': 15,
+            'lead_seconds': 75,
+            'before_routes': ['sleep1'],
+            'after_routes': ['save'],
+        },
+        'actions': [],
+    },
+    'dali_pig': {
+        'schema_version': 1,
+        'name': 'dali_pig',
+        'enabled': False,
+        'description': '大理马车落点 (32,18) 到猪 (29,3)，等待真实路线录制',
+        'map': '大理',
+        'start_coordinate': list(map_pos['大理']['马车落点']),
+        'target_coordinate': list(map_pos['大理']['猪']),
+        'schedule': {
+            'interval_minutes': 60,
+            'initial_delay_minutes': 0,
+            'lead_seconds': 75,
+            'before_routes': ['sleep1'],
+            'after_routes': ['save'],
+        },
+        'actions': [],
+    },
+}
