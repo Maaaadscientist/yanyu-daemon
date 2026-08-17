@@ -318,14 +318,18 @@ def due_task_names(state, run_now, active_names=None, precision_reserve_seconds=
             seconds_to_precise = (min(future_precise_starts) - now).total_seconds()
             if seconds_to_precise <= precision_reserve_seconds:
                 return []
-    return sorted(
-        due,
-        key=lambda name: (
-            state[name]["next_due"] <= now,
-            state[name]["next_due"],
+    def task_priority(name):
+        task_state = state[name]
+        precise = float(task_state.get("lead_seconds", 0.0)) > 0
+        missed_target = task_state["next_due"] <= now
+        return (
+            not precise,
+            missed_target if precise else False,
+            task_state["next_due"],
             name,
-        ),
-    )
+        )
+
+    return sorted(due, key=task_priority)
 
 
 def task_start_time(task_state):

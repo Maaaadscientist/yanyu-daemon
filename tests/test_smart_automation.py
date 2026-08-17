@@ -816,6 +816,17 @@ class SmartAutomationTests(unittest.TestCase):
 
         self.assertEqual(due, ["precise", "overdue"])
 
+    def test_missed_precise_task_precedes_older_legacy_backlog(self):
+        now = datetime.now()
+        state = {
+            "legacy": {"next_due": now - timedelta(hours=9), "lead_seconds": 0},
+            "precise": {"next_due": now - timedelta(hours=1), "lead_seconds": 75},
+        }
+
+        due = tracking_click.due_task_names(state, None)
+
+        self.assertEqual(due, ["precise", "legacy"])
+
     def test_scheduler_reserves_a_nearby_future_precision_window(self):
         now = datetime.now()
         state = {

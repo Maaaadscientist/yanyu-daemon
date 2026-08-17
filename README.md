@@ -452,7 +452,7 @@ Important behavior:
 - Running with `--only-task` keeps the saved due times of all inactive tasks intact.
 - Smart tasks may start at `next_due - lead_seconds`, travel early, and wait at the resource-selection gate until the exact target refresh time.
 - The observed pre-anchor duration updates `lead_seconds` without counting time spent waiting at the gate.
-- The normal loop re-evaluates priorities after every task and reserves the final 120 seconds before a future precise start window, so a backlog of legacy routes cannot monopolize a newly due smart task. Tune this with `--precision-reserve-seconds`.
+- The normal loop re-evaluates priorities after every task. Precise smart tasks rank ahead of overdue legacy backlog even when their own targets were missed during downtime; an upcoming precise target ranks ahead of an already missed one. The scheduler also reserves the final 120 seconds before a future precise start window. Tune this with `--precision-reserve-seconds`.
 - Failure events include the smart action index, type, and label so one broken segment can be re-recorded.
 
 List scheduler groups and route-level tasks:
