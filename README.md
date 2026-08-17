@@ -552,6 +552,12 @@ POST /api/acquisitions/adjust
 
 Every POST must include `X-Yanyu-Request: dashboard`; authenticated LAN requests must also include HTTP Basic credentials. The bundled dashboard supplies the header automatically.
 
+`POST /api/control/stop` terminates the scheduler process, including its attached 8765 control server. An already-open browser page then reports `Failed to fetch`; the independent 8766 read-only monitor remains available. Restart the attached control service without dispatching overdue game tasks by adding `--start-paused`, then use `安全从头恢复` when ready.
+
+```bash
+python3.12 tracking_click.py --start-paused
+```
+
 Start a monitor-only process without opening or controlling the game:
 
 ```bash

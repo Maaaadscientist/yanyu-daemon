@@ -425,9 +425,12 @@ python3.12 tracking_click.py --only-task dali_pig --wait-once
 
 正在执行的 `rapid_clicks` 是例外。停止请求会等本组快速连点全部完成后再生效，避免多段轻功只执行一半而摔落。日志依次包含 `scheduler_hotkey_stop_requested` 和 `scheduler_stopped`，后者的 `reason` 为 `global_hotkey`。
 
+网页“安全停止”会结束整个调度器进程，因此与它绑定的 8765 控制服务也会消失；浏览器保留的旧页面会显示 `Failed to fetch`。独立的 8766 只读服务不受影响。只恢复控制服务而不立即执行过期任务时，使用 `--start-paused` 启动，确认状态后再从网页执行“安全从头恢复”。
+
 可自定义或禁用全局热键：
 
 ```bash
+python3.12 tracking_click.py --start-paused
 python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
 python3.12 tracking_click.py --no-stop-hotkey
 ```

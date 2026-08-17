@@ -276,6 +276,11 @@ def parse_args():
     parser.add_argument("--retry-minutes", type=float, default=10.0, help="Delay before retrying a failed task.")
     parser.add_argument("--startup-delay", type=float, default=5.0, help="Seconds to wait before scheduler starts.")
     parser.add_argument(
+        "--start-paused",
+        action="store_true",
+        help="Start the web service and scheduler in a paused state without dispatching game actions.",
+    )
+    parser.add_argument(
         "--completion-padding-seconds",
         type=float,
         default=0.0,
@@ -1524,6 +1529,12 @@ def main():
             force=bool(request.get("force")),
         )
     )
+    if args.start_paused and not runtime_control.is_paused:
+        runtime_control.request_pause(
+            reason="startup_pause",
+            source="command_line",
+            details={"start_paused": True},
+        )
     period_reader = GamePeriodReader(
         automation,
         min_similarity=args.night_period_min_score,
