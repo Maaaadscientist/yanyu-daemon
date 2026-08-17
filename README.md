@@ -449,11 +449,13 @@ Important behavior:
 
 - Each scheduled task is now a route-level job such as `cow2`, `xigua`, `pingguo`, or `suancai`.
 - Group names such as `1_hour`, `2_hour`, `3_hour`, `5_hour`, `6_hour`, and `daily` still work as command shortcuts.
-- Pig/cow/sheep refresh timing starts at the exact slaughter click. Bear timing starts at the confirmation that begins auto-battle. Fruit, shrimp, and other collection routes retain their configured intervals and start at the first resource confirmation click.
+- Pig/cow/sheep refresh timing starts at the exact slaughter click. The Changbai and Tianshan bear timers start at the named movement click that enters their auto-battle. Fruit, shrimp, and other collection routes retain their configured intervals and start at the first resource confirmation click.
 - Legacy tuple routes infer this exact action from the stable `边栏 -> 空白 -> 确认` interaction shape. Repeated dialog confirmations are not counted as additional refresh anchors.
-- Pen animals (`pig1`, `pig2`, `dali_pig`, and `dali_cow`) use 60 minutes. Sai Bei, Tianshan, Sunset Ranch, and the other ranch routes (`bear7`, `bear14`, `cow1`, and `cow2`) use 180 minutes.
+- Pen animals (`pig1`, `pig2`, `dali_pig`, and `dali_cow`) use 60 minutes. The legacy `bear2/3/4/5/6/8/9/10/11/12/13/15` names are map-cow routes for Gusu, Hangzhou, Quanzhou, Luoyang, Nanyangdu, Luoxia, Emei, Mingyue, Longquan, Shuangwang, Huashan, and Fengming; each records one cow on a 60-minute timer.
+- `bear1` contains two independent resources: the Changbai bear at action 15 and the Changbai cow at action 21. `bear_tianshan` contains the Tianshan bear at action 13. These are the only two wild-bear resource points.
+- Sai Bei, Tianshan, Sunset Ranch, and the other ranch routes (`bear7`, `bear14`, `cow1`, and `cow2`) use 180 minutes.
 - Multi-point routes persist one timer per resource point. The complete route becomes due when the latest point is ready, so an early point is not used to start the route before the final point refreshes.
-- Routes without a proven action anchor, currently home maintenance and the Tianshan transfer route, retain the conservative task-completion fallback.
+- Routes without a proven action anchor, currently home maintenance, retain the conservative task-completion fallback.
 - If a task crashes, it is marked `failed`, a failure event is logged, a screenshot is captured, and the task retries after 10 minutes.
 - Failed completion does not shift the long refresh anchor.
 - Installed smart procedures are discovered from `procedures/*.json` and appear in the `smart` group.
@@ -508,6 +510,13 @@ Every exact anchor appends a `resource_acquired` event to `resource_history.json
 
 On first startup, old state is migrated without deleting history. In particular, an old three-hour `dali_cow` target is recomputed as one hour from its last exact slaughter anchor.
 
+The one-time bear/cow correction preserves the old append-only ledger, adds compensating audit records, reclassifies regional cows, and backfills the two real bear points from action logs:
+
+```bash
+python3.12 migrate_bear_cow_model.py \
+  --event-file runs/tracking_current/events.jsonl
+```
+
 ### Web Monitor
 
 The scheduler serves the local dashboard by default:
@@ -537,6 +546,31 @@ python3.12 monitor_server.py --host 127.0.0.1 --port 8765
 ```
 
 Monitor-only mode is read-only except for acquisition adjustments. Scheduler controls return an error until the dashboard is hosted by `tracking_click.py`. Keep the default loopback host; the control API has no remote-user authentication and should not be exposed directly to a network.
+
+### Secure Remote Resume
+
+Keep the integrated scheduler dashboard on `127.0.0.1:8765`. From another Mac or Linux machine on the LAN, create an SSH tunnel:
+
+```bash
+ssh -N -L 8765:127.0.0.1:8765 mac@192.168.1.3
+```
+
+Open `http://127.0.0.1:8765` on the remote machine. The page is now carried through SSH and its pause, normal resume, force resume, and stop controls are attached to the scheduler. The public LAN page on port `8766` remains monitor-only.
+
+For command-line recovery without opening a browser:
+
+```bash
+# Inspect the checkpoint first.
+ssh mac@192.168.1.3 'curl -fsS http://127.0.0.1:8765/api/status'
+
+# Use normal resume when map and coordinates are readable and unchanged.
+ssh mac@192.168.1.3 'curl -fsS -X POST http://127.0.0.1:8765/api/control/resume'
+
+# Use force resume only after visually confirming an unreadable overlay such as the carriage map.
+ssh mac@192.168.1.3 'curl -fsS -X POST http://127.0.0.1:8765/api/control/force-resume'
+```
+
+Enable macOS `System Settings > General > Sharing > Remote Login` for the `mac` account before using SSH. Do not bind the unauthenticated scheduler control API to `0.0.0.0` or forward port `8765` from the router.
 
 Change the integrated address or disable the service:
 

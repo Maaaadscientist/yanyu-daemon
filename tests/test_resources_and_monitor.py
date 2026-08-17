@@ -6,10 +6,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import coordinates
 import tracking_click
-from coordinates import bear7, bear14, cow2, pig1, pos
+from coordinates import bear1, bear2, bear7, bear14, bear_tianshan, cow2, pig1, pos
 from monitor_server import MonitorData, MonitoringServer
-from resource_catalog import ResourceLedger, infer_legacy_anchor_specs
+from resource_catalog import MAP_COW_TASKS, ResourceLedger, infer_legacy_anchor_specs
 
 
 class FakeRouteAutomation:
@@ -76,6 +77,104 @@ class ResourcesAndMonitorTests(unittest.TestCase):
             default_interval_minutes=180,
         )
         self.assertEqual([spec.action_index for spec in cow_specs], [21, 27, 32])
+
+    def test_changbai_route_tracks_one_bear_and_one_cow(self):
+        changbai = infer_legacy_anchor_specs(
+            "bear1", "bear1", bear1, pos, default_interval_minutes=60
+        )
+        tianshan = infer_legacy_anchor_specs(
+            "bear_tianshan", "bear_tianshan", bear_tianshan, pos, default_interval_minutes=60
+        )
+        map_cow = infer_legacy_anchor_specs(
+            "bear2", "bear2", bear2, pos, default_interval_minutes=60
+        )
+
+        self.assertEqual(
+            [(item.action_index, item.label, item.category) for item in changbai],
+            [(15, "长白山熊", "wild_bear"), (21, "长白山牛", "map_cow")],
+        )
+        self.assertEqual([(item.action_index, item.label) for item in tianshan], [(13, "天山熊")])
+        self.assertEqual(map_cow[0].category, "map_cow")
+        self.assertEqual((map_cow[0].action_index, map_cow[0].label), (14, "姑苏牛"))
+        self.assertTrue(all(item.record_acquisition for item in (*changbai, *tianshan, *map_cow)))
+
+    def test_every_legacy_regional_route_is_one_map_cow(self):
+        expected = {
+            "bear2": ("姑苏牛", 14),
+            "bear3": ("杭州牛", 15),
+            "bear4": ("泉州牛", 12),
+            "bear5": ("洛阳牛", 14),
+            "bear6": ("南阳渡牛", 13),
+            "bear8": ("落霞镇牛", 12),
+            "bear9": ("峨眉山牛", 11),
+            "bear10": ("明月峰牛", 11),
+            "bear11": ("龙泉镇牛", 13),
+            "bear12": ("双王镇牛", 13),
+            "bear13": ("华山牛", 16),
+            "bear15": ("凤鸣集牛", 14),
+        }
+
+        self.assertEqual(MAP_COW_TASKS, {task: value[0] for task, value in expected.items()})
+        for task_name, (label, action_index) in expected.items():
+            with self.subTest(task=task_name):
+                specs = infer_legacy_anchor_specs(
+                    task_name,
+                    task_name,
+                    getattr(coordinates, task_name),
+                    coordinates.pos,
+                    default_interval_minutes=60,
+                )
+                self.assertEqual(len(specs), 1)
+                self.assertEqual(
+                    (specs[0].point_id, specs[0].label, specs[0].category, specs[0].action_index),
+                    (f"{task_name}:1", label, "map_cow", action_index),
+                )
+
+    def test_map_cow_keeps_exact_schedule_and_counts_one_acquisition(self):
+        base = datetime(2026, 8, 17, 10, 0, 0)
+        task = tracking_click.ScheduledTask("bear2", 60, 0, ("bear2",))
+        state = {
+            "bear2": {
+                "next_due": base,
+                "last_started": None,
+                "last_completed": None,
+                "last_refresh_anchor": None,
+                "last_status": "new",
+                "failures": 0,
+                "lead_seconds": 0,
+                "lead_samples": 0,
+                "resource_points": {},
+                "human_pause_seconds": 0,
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(
+                state_file=str(Path(directory, "state.json")),
+                log_jsonl=str(Path(directory, "events.jsonl")),
+                capture="none",
+                capture_dir=str(Path(directory, "captures")),
+                log_actions=False,
+                dry_run=False,
+                completion_padding_seconds=0,
+                retry_minutes=10,
+            )
+            ledger = ResourceLedger(Path(directory, "resources.jsonl"))
+            tracking_click.run_task(
+                task,
+                FakeRouteAutomation(base),
+                smart_runner=None,
+                args=args,
+                state=state,
+                ledger=ledger,
+            )
+            records = ledger.recent()
+
+        anchored_at = base + timedelta(seconds=14)
+        self.assertEqual(state["bear2"]["last_refresh_anchor"], anchored_at)
+        self.assertEqual(state["bear2"]["next_due"], anchored_at + timedelta(hours=1))
+        self.assertEqual(state["bear2"]["resource_points"]["bear2:1"]["category"], "map_cow")
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["point_label"], "姑苏牛")
 
     def test_old_dali_cow_state_migrates_from_three_hours_to_one_hour(self):
         anchor = datetime(2026, 8, 17, 11, 22, 53, 519000)

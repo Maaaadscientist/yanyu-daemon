@@ -10,6 +10,8 @@ const categoryLabels = {
   pen_livestock: "圈养牲畜",
   ranch_livestock: "牧场牲畜",
   wild_bear: "野熊",
+  map_cow: "各地牛棚",
+  mixed_livestock: "混合牲畜",
   fruit: "水果",
   collection: "采集",
   home_maintenance: "家宅",
@@ -99,6 +101,8 @@ function renderStatus(payload) {
   $("#pause-total").textContent = elapsedDuration(runtime.total_pause_seconds || 0);
   $("#ready-count").textContent = payload.tasks.filter((item) => item.status === "ready").length;
   $("#failed-count").textContent = payload.tasks.filter((item) => item.status === "failed").length;
+  $("#wild-bear-point-count").textContent = payload.points.filter((item) => item.category === "wild_bear").length;
+  $("#map-cow-point-count").textContent = payload.points.filter((item) => item.category === "map_cow").length;
   $("#updated-at").textContent = dateTime(payload.generated_at);
 
   $$("[data-control]").forEach((button) => {

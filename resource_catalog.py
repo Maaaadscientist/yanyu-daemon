@@ -17,8 +17,10 @@ class ResourcePolicy:
     anchor_mode: str = "inferred_action"
     confirmation_names: tuple[str, ...] = ("确认", "确认1")
     point_labels: tuple[str, ...] = ()
+    anchor_point_names: tuple[str, ...] = ()
     estimated_quantity: float = 1.0
     unit: str = "次"
+    record_acquisition: bool = True
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,7 @@ class ResourceAnchorSpec:
     category: str
     estimated_quantity: float = 1.0
     unit: str = "次"
+    record_acquisition: bool = True
 
 
 PEN_LIVESTOCK = {
@@ -47,9 +50,24 @@ RANCH_LIVESTOCK = {
     "bear14": ("天山牧场", ("天山羊 1", "天山羊 2", "天山牛", "天山羊 3")),
 }
 
-WILD_BEAR_TASKS = tuple(
-    f"bear{index}" for index in (1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15)
-)
+WILD_BEAR_POINTS = {
+    "bear_tianshan": ("天山熊", ("天山2",)),
+}
+
+MAP_COW_TASKS = {
+    "bear2": "姑苏牛",
+    "bear3": "杭州牛",
+    "bear4": "泉州牛",
+    "bear5": "洛阳牛",
+    "bear6": "南阳渡牛",
+    "bear8": "落霞镇牛",
+    "bear9": "峨眉山牛",
+    "bear10": "明月峰牛",
+    "bear11": "龙泉镇牛",
+    "bear12": "双王镇牛",
+    "bear13": "华山牛",
+    "bear15": "凤鸣集牛",
+}
 
 DISPLAY_NAMES = {
     "xigua": "龙泉镇西瓜",
@@ -63,7 +81,6 @@ DISPLAY_NAMES = {
     "hexia2": "姑苏河虾",
     "suancai": "长白山酸菜",
     "jiazhai": "家宅维护",
-    "bear_tianshan": "天山中转路线",
 }
 
 FRUIT_TASKS = {"xigua", "xiangjiao", "shanzha", "pingguo", "changbaipingguo"}
@@ -109,13 +126,35 @@ def policy_for_task(task_name: str, default_interval_minutes: float) -> Resource
             point_labels=labels,
             unit="只",
         )
-    if task_name in WILD_BEAR_TASKS:
+    if task_name == "bear1":
         return ResourcePolicy(
             task_name,
-            f"野熊路线 {task_name.removeprefix('bear')}",
+            "长白山熊与牛",
+            "mixed_livestock",
+            float(default_interval_minutes),
+            anchor_mode="mixed_action",
+            unit="只",
+        )
+    if task_name in WILD_BEAR_POINTS:
+        display_name, anchor_names = WILD_BEAR_POINTS[task_name]
+        return ResourcePolicy(
+            task_name,
+            display_name,
             "wild_bear",
             float(default_interval_minutes),
-            point_labels=(f"野熊 {task_name.removeprefix('bear')}",),
+            anchor_mode="named_action",
+            point_labels=(display_name,),
+            anchor_point_names=anchor_names,
+            unit="只",
+        )
+    if task_name in MAP_COW_TASKS:
+        display_name = MAP_COW_TASKS[task_name]
+        return ResourcePolicy(
+            task_name,
+            display_name,
+            "map_cow",
+            float(default_interval_minutes),
+            point_labels=(display_name,),
             unit="只",
         )
     if task_name in FRUIT_TASKS:
@@ -144,14 +183,6 @@ def policy_for_task(task_name: str, default_interval_minutes: float) -> Resource
             float(default_interval_minutes),
             anchor_mode="task_completion",
         )
-    if task_name == "bear_tianshan":
-        return ResourcePolicy(
-            task_name,
-            DISPLAY_NAMES[task_name],
-            "travel",
-            float(default_interval_minutes),
-            anchor_mode="task_completion",
-        )
     return ResourcePolicy(
         task_name,
         DISPLAY_NAMES.get(task_name, task_name),
@@ -170,7 +201,7 @@ def infer_legacy_anchor_specs(
     default_interval_minutes: float,
 ) -> tuple[ResourceAnchorSpec, ...]:
     policy = policy_for_task(task_name, default_interval_minutes)
-    if policy.anchor_mode != "inferred_action" or route_name != task_name:
+    if policy.anchor_mode not in {"inferred_action", "named_action", "mixed_action"} or route_name != task_name:
         return ()
 
     blank = named_points.get("空白")
@@ -181,16 +212,69 @@ def infer_legacy_anchor_specs(
         if name in named_points
     }
     reverse_names = _reverse_point_names(named_points)
-    matches = []
+    confirmation_matches = []
     for offset in range(2, len(actions)):
         target = actions[offset][0]
         if not _is_point(target) or target not in confirmations:
             continue
         previous = actions[offset - 1][0]
         before_previous = actions[offset - 2][0]
-        if previous != blank or before_previous not in sidebars:
-            continue
-        matches.append(offset)
+        if previous == blank and before_previous in sidebars:
+            confirmation_matches.append(offset)
+
+    if policy.anchor_mode == "mixed_action":
+        bear_target = named_points.get("长白熊")
+        bear_offset = next(
+            (
+                offset
+                for offset, action in enumerate(actions)
+                if _is_point(action[0]) and action[0] == bear_target
+            ),
+            None,
+        )
+        specs = []
+        if bear_offset is not None:
+            specs.append(
+                ResourceAnchorSpec(
+                    task_name=task_name,
+                    route_name=route_name,
+                    action_index=bear_offset + 1,
+                    point_id="bear1:bear",
+                    label="长白山熊",
+                    category="wild_bear",
+                    unit="只",
+                )
+            )
+        if confirmation_matches:
+            specs.append(
+                ResourceAnchorSpec(
+                    task_name=task_name,
+                    route_name=route_name,
+                    action_index=confirmation_matches[0] + 1,
+                    point_id="bear1:cow",
+                    label="长白山牛",
+                    category="map_cow",
+                    unit="只",
+                )
+            )
+        return tuple(specs)
+
+    matches = []
+    if policy.anchor_mode == "named_action":
+        for point_name in policy.anchor_point_names:
+            target = named_points.get(point_name)
+            match = next(
+                (
+                    offset
+                    for offset, action in enumerate(actions)
+                    if _is_point(action[0]) and action[0] == target
+                ),
+                None,
+            )
+            if match is not None:
+                matches.append(match)
+    else:
+        matches = confirmation_matches
 
     specs = []
     for sequence, offset in enumerate(matches, start=1):
@@ -210,6 +294,7 @@ def infer_legacy_anchor_specs(
                 category=policy.category,
                 estimated_quantity=policy.estimated_quantity,
                 unit=policy.unit,
+                record_acquisition=policy.record_acquisition,
             )
         )
     return tuple(specs)
@@ -245,6 +330,7 @@ def smart_anchor_specs(
                 category=policy.category,
                 estimated_quantity=policy.estimated_quantity,
                 unit=policy.unit,
+                record_acquisition=policy.record_acquisition,
             )
         )
     return tuple(specs)

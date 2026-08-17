@@ -305,6 +305,20 @@ def load_state(path, tasks):
                     task.interval_minutes,
                 )
             resource_points[str(point_id)] = point_state
+        expected_specs = {spec.point_id: spec for spec in task_resource_specs(task)}
+        for point_id, point_state in resource_points.items():
+            spec = expected_specs.get(point_id)
+            if spec is None:
+                continue
+            point_state.update(
+                {
+                    "label": spec.label,
+                    "category": spec.category,
+                    "estimated_quantity": spec.estimated_quantity,
+                    "unit": spec.unit,
+                    "record_acquisition": spec.record_acquisition,
+                }
+            )
         if resource_points:
             due_time = next_due_for_points(
                 resource_points,
@@ -573,6 +587,7 @@ def apply_resource_anchor(
             "next_due": next_due,
             "estimated_quantity": spec.estimated_quantity,
             "unit": spec.unit,
+            "record_acquisition": spec.record_acquisition,
             "anchor_source": source,
             "samples": max(0, int(point_state.get("samples", 0))) + 1,
         }
@@ -582,7 +597,7 @@ def apply_resource_anchor(
         task_state["last_refresh_anchor"] = anchored_at
     save_state(args.state_file, state)
     acquisition = None
-    if ledger is not None:
+    if ledger is not None and spec.record_acquisition:
         acquisition = ledger.record_anchor(
             task_name=task.name,
             spec=spec,
@@ -604,6 +619,7 @@ def apply_resource_anchor(
             "next_due": next_due.isoformat(timespec="milliseconds"),
             "anchor_source": source,
             "acquisition_id": acquisition.get("id") if acquisition else None,
+            "acquisition_recorded": bool(acquisition),
         },
     )
     return next_due
@@ -695,7 +711,12 @@ def run_task(
                     if isinstance(point_due, str):
                         point_due = parse_optional_datetime(point_due)
                     if (
-                        spec.category in {"pen_livestock", "ranch_livestock", "wild_bear"}
+                        spec.category in {
+                            "pen_livestock",
+                            "ranch_livestock",
+                            "wild_bear",
+                            "map_cow",
+                        }
                         and point_due
                         and point_due > now
                     ):
