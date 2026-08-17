@@ -419,6 +419,19 @@ python3.12 tracking_click.py --only-task dali_pig --wait-once
 
 `--once` 只检查当前已经到期的任务；`--wait-once` 会等到提前窗口再运行一个 due batch。
 
+### 12.1 安全停止
+
+`tracking_click.py` 默认注册全局 `<ctrl>+c`。即使守护进程运行在后台 `screen` 中，只要按下该组合键，就会设置统一停止事件：普通点击间隔、OCR 轮询、刷新时间门和调度轮询会立即结束，`finally` 会保存完整的 `scheduler_state.json`。
+
+正在执行的 `rapid_clicks` 是例外。停止请求会等本组快速连点全部完成后再生效，避免多段轻功只执行一半而摔落。日志依次包含 `scheduler_hotkey_stop_requested` 和 `scheduler_stopped`，后者的 `reason` 为 `global_hotkey`。
+
+可自定义或禁用全局热键：
+
+```bash
+python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
+python3.12 tracking_click.py --no-stop-hotkey
+```
+
 ## 13. 游戏更新后的修复流程
 
 1. 暂停坏任务，但保持其他任务运行：

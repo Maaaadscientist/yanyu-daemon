@@ -122,8 +122,17 @@ class VisionGameStateReader:
     def __init__(self, automation, *, languages: Sequence[str] = ("zh-Hans", "en-US")) -> None:
         self.automation = automation
         self.languages = tuple(languages)
+        self.stop_event = getattr(automation, "stop_event", None)
         self._request_class = None
         self._handler_class = None
+
+    def _wait_seconds(self, seconds: float) -> None:
+        stop_event = getattr(self, "stop_event", None)
+        if stop_event is not None:
+            if stop_event.wait(max(0.0, float(seconds))):
+                raise KeyboardInterrupt("Scheduler stop requested.")
+            return
+        time.sleep(max(0.0, float(seconds)))
 
     def _load_vision(self) -> None:
         if self._request_class is not None:
@@ -191,7 +200,7 @@ class VisionGameStateReader:
             try:
                 last_state = self.read_state()
             except StateReadError:
-                time.sleep(poll_seconds)
+                self._wait_seconds(poll_seconds)
                 continue
             if on_sample:
                 on_sample(last_state)
@@ -204,7 +213,7 @@ class VisionGameStateReader:
                     return last_state, time.monotonic() - started
             else:
                 consecutive = 0
-            time.sleep(poll_seconds)
+            self._wait_seconds(poll_seconds)
 
         expected_label = format_expected_state(expected)
         raise StateTimeout(
@@ -239,7 +248,7 @@ class VisionGameStateReader:
             try:
                 observations = self.observations()
             except StateReadError:
-                time.sleep(poll_seconds)
+                self._wait_seconds(poll_seconds)
                 continue
             try:
                 last_observation = find_text_observation(
@@ -258,7 +267,7 @@ class VisionGameStateReader:
                     return last_observation, time.monotonic() - started
             else:
                 consecutive = 0
-            time.sleep(poll_seconds)
+            self._wait_seconds(poll_seconds)
 
         expectation = "appear" if present else "disappear"
         raise StateTimeout(f"Timed out after {timeout:.1f}s waiting for text '{text}' to {expectation}.")
@@ -335,12 +344,13 @@ class SmartProcedureRunner:
             if not dry_run and hasattr(self.automation, "focus_window"):
                 self.automation.focus_window()
             for index, action in enumerate(procedure["actions"], start=1):
+                self._wait_seconds(0.0)
                 current_index = index
                 current_action = action
                 timing_key = action_timing_key(action)
                 before_delay = max(0.0, float(action.get("before_delay", 0.0)))
                 if before_delay and not dry_run:
-                    time.sleep(before_delay)
+                    self._wait_seconds(before_delay)
                 status = {
                     "event": "smart_action",
                     "procedure": name,
@@ -361,7 +371,10 @@ class SmartProcedureRunner:
                 if dry_run:
                     continue
                 if not_before and action.get("wait_until_scheduled"):
-                    waited = sleep_until_datetime(not_before)
+                    waited = sleep_until_datetime(
+                        not_before,
+                        stop_event=getattr(self.automation, "stop_event", None),
+                    )
                     scheduled_wait_seconds += waited
                     gate_status = {
                         **status,
@@ -580,7 +593,7 @@ class SmartProcedureRunner:
                 )
             return None
         if action_type == "pause":
-            time.sleep(max(0.0, float(action.get("seconds", 0.0))))
+            self._wait_seconds(float(action.get("seconds", 0.0)))
             return None
         raise ProcedureError(f"Unsupported smart action type: {action_type}")
 
@@ -609,6 +622,13 @@ class SmartProcedureRunner:
             return max(1.0, float(action["timeout"]))
         estimates = [float(action.get("observed_seconds", 0.0)), self.timings.estimate(procedure, timing_key) or 0.0]
         return max(5.0, max(estimates) * 1.8 + 2.0)
+
+    def _wait_seconds(self, seconds: float) -> None:
+        wait = getattr(self.automation, "wait_seconds", None)
+        if wait:
+            wait(seconds)
+            return
+        time.sleep(max(0.0, float(seconds)))
 
 
 def load_procedures(
@@ -1126,7 +1146,7 @@ def format_smart_action(status: Mapping, action: Mapping) -> str:
     )
 
 
-def sleep_until_datetime(moment: datetime) -> float:
+def sleep_until_datetime(moment: datetime, *, stop_event=None) -> float:
     remaining = (moment - datetime.now()).total_seconds()
     if remaining <= 0:
         return 0.0
@@ -1136,5 +1156,9 @@ def sleep_until_datetime(moment: datetime) -> float:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        time.sleep(remaining)
+        if stop_event is not None:
+            if stop_event.wait(remaining):
+                raise KeyboardInterrupt("Scheduler stop requested.")
+        else:
+            time.sleep(remaining)
     return time.monotonic() - started

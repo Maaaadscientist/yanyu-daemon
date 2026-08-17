@@ -1,3 +1,4 @@
+import threading
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,6 +118,49 @@ class AutomationTests(unittest.TestCase):
                 )
 
         self.assertEqual(clicks, [(10, 20), (30, 40), (50, 60)])
+
+    def test_stop_request_waits_for_rapid_click_group_to_finish(self):
+        instance = self.make_automation()
+        instance.stop_event = threading.Event()
+        clock = [30.0]
+        clicks = []
+
+        def monotonic():
+            return clock[0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        def click(**kwargs):
+            clicks.append((kwargs["x"], kwargs["y"]))
+            clock[0] += 0.02
+            if len(clicks) == 1:
+                instance.stop_event.set()
+
+        with (
+            patch("automation.time.monotonic", side_effect=monotonic),
+            patch("automation.time.sleep", side_effect=sleep),
+            patch("automation.pyautogui.click", side_effect=click),
+        ):
+            with self.assertRaises(KeyboardInterrupt):
+                instance.rapid_click_reference(
+                    [(10, 20), (30, 40), (50, 60)],
+                    intervals=[0.1, 0.1],
+                    max_gap_seconds=0.3,
+                )
+
+        self.assertEqual(clicks, [(10, 20), (30, 40), (50, 60)])
+
+    def test_stop_request_interrupts_wait_without_sleeping(self):
+        instance = self.make_automation()
+        instance.stop_event = threading.Event()
+        instance.stop_event.set()
+
+        with patch("automation.time.sleep") as sleep:
+            with self.assertRaises(KeyboardInterrupt):
+                instance.wait_seconds(60)
+
+        sleep.assert_not_called()
 
     def test_feature_alignment_maps_a_canonical_point_after_map_pan(self):
         instance = self.make_automation()

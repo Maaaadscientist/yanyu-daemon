@@ -1,4 +1,5 @@
 import math
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -69,6 +70,7 @@ class GameAutomation:
         game_title: str = "烟雨江湖",
         reference_image: str = "game_screenshot.png",
         position_names: Mapping[Point, str] | None = None,
+        stop_event: threading.Event | None = None,
     ) -> None:
         screen_width, screen_height = pyautogui.size()
         print(f"Screen width: {screen_width}, Screen height: {screen_height}")
@@ -92,10 +94,20 @@ class GameAutomation:
         self.scale_x = window_info.width / image_width
         self.scale_y = window_info.height / image_height
         self.position_names = position_names or {}
+        self.stop_event = stop_event
 
         print(f"Window Position: ({self.window_left}, {self.window_top})")
         print(f"Window Size: {window_info.width}x{window_info.height}")
         print(f"Image Size: {image_width}x{image_height}")
+
+    def wait_seconds(self, seconds: float) -> None:
+        seconds = max(0.0, float(seconds))
+        stop_event = getattr(self, "stop_event", None)
+        if stop_event is not None:
+            if stop_event.wait(seconds):
+                raise KeyboardInterrupt("Scheduler stop requested.")
+            return
+        time.sleep(seconds)
 
     def screen_point(self, point: Point) -> tuple[float, float]:
         x, y = point
@@ -119,7 +131,7 @@ class GameAutomation:
                 print(f"Cannot activate the game window through AppKit: {exc}")
 
         if activated:
-            time.sleep(max(0.0, settle_seconds))
+            self.wait_seconds(settle_seconds)
         return activated
 
     def click_reference(
@@ -150,10 +162,10 @@ class GameAutomation:
         if dry_run:
             return None
         pyautogui.moveTo(start_x, start_y)
-        time.sleep(0.2)
+        self.wait_seconds(0.2)
         dragged_at = datetime.now()
         pyautogui.dragTo(end_x, end_y, button="left", duration=duration)
-        time.sleep(0.2)
+        self.wait_seconds(0.2)
         return dragged_at
 
     def rapid_click_reference(
@@ -203,6 +215,9 @@ class GameAutomation:
 
         gaps = tuple(later - earlier for earlier, later in zip(click_times, click_times[1:]))
         result = RapidClickResult(tuple(wall_times), gaps)
+        stop_event = getattr(self, "stop_event", None)
+        if stop_event is not None and stop_event.is_set():
+            raise KeyboardInterrupt("Scheduler stop requested after completing rapid clicks.")
         missed = [gap for gap in gaps if gap > max_gap_seconds]
         if missed:
             raise RapidClickTimingError(
@@ -342,7 +357,7 @@ class GameAutomation:
         route_start = time.monotonic()
         if not dry_run:
             self.focus_window()
-            time.sleep(start_delay)
+            self.wait_seconds(start_delay)
         for index, (target, delay) in enumerate(action_list, start=1):
             status = self.describe_action(route_label, index, len(action_list), target, delay, route_start, dry_run)
             if print_names or dry_run or step:
@@ -353,7 +368,7 @@ class GameAutomation:
                 input("Press Enter to execute this action...")
 
             if not dry_run:
-                time.sleep(delay)
+                self.wait_seconds(delay)
             if is_point(target):
                 self.click_reference(target, dry_run=dry_run)
             else:
@@ -362,7 +377,7 @@ class GameAutomation:
             if capture_dir and capture_each_action and not dry_run:
                 self.capture_screenshot(capture_dir, f"{safe_name(route_label)}_{index:03d}")
         if not dry_run:
-            time.sleep(end_delay)
+            self.wait_seconds(end_delay)
         if capture_dir and not capture_each_action and not dry_run:
             self.capture_screenshot(capture_dir, safe_name(route_label))
 

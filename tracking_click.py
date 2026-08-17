@@ -1,5 +1,7 @@
 import argparse
 import json
+import signal
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -130,6 +132,16 @@ def parse_args():
     parser.add_argument("--only-task", action="append", help="Only run this task or group. Can repeat.")
     parser.add_argument("--skip-task", action="append", help="Skip this task or group. Can repeat.")
     parser.add_argument("--poll-seconds", type=float, default=0.25, help="Scheduler polling interval.")
+    parser.add_argument(
+        "--stop-hotkey",
+        default="<ctrl>+c",
+        help="Global pynput hotkey that gracefully stops the scheduler (default: <ctrl>+c).",
+    )
+    parser.add_argument(
+        "--no-stop-hotkey",
+        action="store_true",
+        help="Disable the global stop hotkey; terminal Ctrl-C still works in foreground mode.",
+    )
     parser.add_argument(
         "--precision-reserve-seconds",
         type=float,
@@ -299,6 +311,53 @@ def log_event(path, event):
     event = {"time": datetime.now().isoformat(timespec="seconds"), **event}
     with open(path, "a", encoding="utf-8") as file:
         file.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+class SchedulerStopHotkey:
+    def __init__(self, hotkey, stop_event, log_path, *, listener_factory=None):
+        self.hotkey = str(hotkey)
+        self.stop_event = stop_event
+        self.log_path = log_path
+        self.listener_factory = listener_factory
+        self.listener = None
+        self.stop_reason = None
+        self._request_lock = threading.Lock()
+
+    def start(self):
+        if self.listener_factory is None:
+            from pynput.keyboard import GlobalHotKeys
+
+            self.listener_factory = GlobalHotKeys
+        self.listener = self.listener_factory({self.hotkey: self.request_stop})
+        self.listener.start()
+
+    def request_stop(self, *, reason="global_hotkey", event_name="scheduler_hotkey_stop_requested"):
+        with self._request_lock:
+            if self.stop_event.is_set():
+                return
+            source = f"Global stop hotkey {self.hotkey}" if reason == "global_hotkey" else "Terminal Ctrl-C"
+            print(f"{source} pressed; stopping safely.")
+            try:
+                log_event(
+                    self.log_path,
+                    {
+                        "event": event_name,
+                        "hotkey": self.hotkey,
+                        "reason": reason,
+                    },
+                )
+            except Exception as exc:
+                print(f"Could not log stop request: {exc}")
+            finally:
+                self.stop_reason = reason
+                self.stop_event.set()
+
+    def stop(self):
+        if self.listener is None:
+            return
+        self.listener.stop()
+        if self.listener.is_alive():
+            self.listener.join(timeout=1.0)
 
 
 def due_task_names(state, run_now, active_names=None, precision_reserve_seconds=0.0):
@@ -540,20 +599,38 @@ def main():
 
     from automation import GameAutomation
 
-    automation = GameAutomation(position_names={value: key for key, value in pos.items()})
+    stop_event = threading.Event()
+    automation = GameAutomation(
+        position_names={value: key for key, value in pos.items()},
+        stop_event=stop_event,
+    )
     smart_runner = SmartProcedureRunner(
         automation,
         named_points=pos,
         timing_file=args.timing_file,
     )
-    print_schedule(state)
-    print(f"Starting scheduler in {args.startup_delay:g}s")
-    time.sleep(args.startup_delay)
+    hotkey = SchedulerStopHotkey(args.stop_hotkey, stop_event, args.log_jsonl)
+    previous_sigint_handler = signal.getsignal(signal.SIGINT)
 
+    def request_sigint_stop(_signum, _frame):
+        hotkey.request_stop(
+            reason="keyboard_interrupt",
+            event_name="scheduler_interrupt_stop_requested",
+        )
+
+    signal.signal(signal.SIGINT, request_sigint_stop)
     run_now = args.run_now
     completed_batch = False
     try:
+        if not args.no_stop_hotkey:
+            hotkey.start()
+            print(f"Global stop hotkey enabled: {args.stop_hotkey}")
+        print_schedule(state)
+        print(f"Starting scheduler in {args.startup_delay:g}s")
+        automation.wait_seconds(args.startup_delay)
+
         while True:
+            automation.wait_seconds(0.0)
             forced = run_now is not None
             reserve_seconds = 0.0 if forced or args.once else max(0.0, args.precision_reserve_seconds)
             names = due_task_names(
@@ -585,10 +662,20 @@ def main():
                 sleep_seconds = args.poll_seconds
             else:
                 sleep_seconds = args.poll_seconds if until_next is None else min(args.poll_seconds, until_next)
-            time.sleep(max(0.01, sleep_seconds))
+            automation.wait_seconds(max(0.01, sleep_seconds))
     except KeyboardInterrupt:
         print("Scheduler stopped by user.")
+        log_event(
+            args.log_jsonl,
+            {
+                "event": "scheduler_stopped",
+                "reason": hotkey.stop_reason or "keyboard_interrupt",
+            },
+        )
     finally:
+        if not args.no_stop_hotkey:
+            hotkey.stop()
+        signal.signal(signal.SIGINT, previous_sigint_handler)
         save_state(args.state_file, state)
         print_schedule(state)
 

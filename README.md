@@ -454,6 +454,17 @@ Important behavior:
 - The observed pre-anchor duration updates `lead_seconds` without counting time spent waiting at the gate.
 - The normal loop re-evaluates priorities after every task. Precise smart tasks rank ahead of overdue legacy backlog even when their own targets were missed during downtime; an upcoming precise target ranks ahead of an already missed one. The scheduler also reserves the final 120 seconds before a future precise start window. Tune this with `--precision-reserve-seconds`.
 - Failure events include the smart action index, type, and label so one broken segment can be re-recorded.
+- A global `<ctrl>+c` hotkey is enabled by default, including when the scheduler runs in a detached `screen` session. It requests a graceful stop, saves every task's current schedule, and writes `scheduler_hotkey_stop_requested` followed by `scheduler_stopped` to the JSONL log.
+- Normal delays, OCR polling, and scheduled refresh waits stop immediately. An in-progress atomic `rapid_clicks` group finishes first so a multi-jump is not abandoned halfway through.
+
+Change or disable the global stop hotkey:
+
+```bash
+python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
+python3.12 tracking_click.py --no-stop-hotkey
+```
+
+Foreground terminal `Ctrl-C` remains available. Keep custom pynput hotkey expressions quoted so the shell does not interpret angle brackets.
 
 List scheduler groups and route-level tasks:
 
@@ -517,7 +528,7 @@ The following workflow is retained for old tuple routes. For an installed smart 
 
 When a game update breaks one legacy route:
 
-1. Stop the scheduler with `Ctrl-C`.
+1. Stop the scheduler with the global `Ctrl-C` hotkey and confirm a `scheduler_stopped` event was written.
 2. Run only the failed task in dry-run or route-capture mode:
 
 ```bash

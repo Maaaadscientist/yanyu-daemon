@@ -1,4 +1,5 @@
 import json
+import threading
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -590,11 +591,27 @@ class SmartAutomationTests(unittest.TestCase):
                 action_logger=events.append,
             )
 
-        wait.assert_called_once_with(target)
+        wait.assert_called_once_with(target, stop_event=None)
         self.assertEqual(result.scheduled_wait_seconds, 12.5)
         gate = next(event for event in events if event["event"] == "smart_scheduled_gate_reached")
         self.assertEqual(gate["scheduled_wait_seconds"], 12.5)
         self.assertEqual(gate["scheduled_for"], target.isoformat(timespec="milliseconds"))
+
+    def test_scheduler_stop_hotkey_is_idempotent_and_logged(self):
+        stop_event = threading.Event()
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory, "events.jsonl")
+            hotkey = tracking_click.SchedulerStopHotkey("<ctrl>+c", stop_event, log_path)
+
+            hotkey.request_stop()
+            hotkey.request_stop()
+
+            events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertTrue(stop_event.is_set())
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event"], "scheduler_hotkey_stop_requested")
+        self.assertEqual(events[0]["hotkey"], "<ctrl>+c")
 
     def test_recording_keeps_text_target_and_pixel_fallback(self):
         event = {"type": "click", "reference": [1950, 704], "delay": 0.5, "monotonic": 10.0}
