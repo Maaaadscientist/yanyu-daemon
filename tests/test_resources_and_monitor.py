@@ -6,8 +6,10 @@ import unittest
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import coordinates
 import tracking_click
@@ -17,6 +19,7 @@ from monitor_server import (
     WRITE_REQUEST_VALUE,
     MonitorData,
     MonitoringServer,
+    ThreadingTLSHTTPServer,
     read_auth_token_file,
 )
 from resource_catalog import MAP_COW_TASKS, ResourceLedger, infer_legacy_anchor_specs
@@ -496,6 +499,47 @@ class ResourcesAndMonitorTests(unittest.TestCase):
             token_path.chmod(0o644)
             with self.assertRaisesRegex(ValueError, "mode 600"):
                 read_auth_token_file(token_path)
+
+    def test_tls_server_defers_handshake_until_the_client_worker(self):
+        class FakeConnection:
+            def __init__(self):
+                self.timeout = None
+
+            def settimeout(self, value):
+                self.timeout = value
+
+            def close(self):
+                return None
+
+        class FakeSecureConnection:
+            pass
+
+        class FakeContext:
+            def __init__(self):
+                self.arguments = None
+                self.secure_connection = FakeSecureConnection()
+
+            def wrap_socket(self, connection, **kwargs):
+                self.arguments = (connection, kwargs)
+                return self.secure_connection
+
+        raw_connection = FakeConnection()
+        context = FakeContext()
+        server = object.__new__(ThreadingTLSHTTPServer)
+        server.ssl_context = context
+        server.handshake_timeout = 5.0
+        with mock.patch.object(
+            ThreadingHTTPServer,
+            "get_request",
+            return_value=(raw_connection, ("192.168.1.7", 50000)),
+        ):
+            secure_connection, address = server.get_request()
+
+        self.assertIs(secure_connection, context.secure_connection)
+        self.assertEqual(address, ("192.168.1.7", 50000))
+        self.assertEqual(raw_connection.timeout, 5.0)
+        self.assertIs(context.arguments[0], raw_connection)
+        self.assertFalse(context.arguments[1]["do_handshake_on_connect"])
 
     def test_resumed_task_uses_original_pause_baseline_and_start_time(self):
         original_start = datetime.now() - timedelta(minutes=8)

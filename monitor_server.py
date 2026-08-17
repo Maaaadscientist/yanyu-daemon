@@ -209,6 +209,37 @@ class MonitorData:
         }
 
 
+class ThreadingTLSHTTPServer(ThreadingHTTPServer):
+    """Accept new clients without letting one stalled TLS handshake block the server."""
+
+    def __init__(self, server_address, handler, *, ssl_context, handshake_timeout=5.0):
+        self.ssl_context = ssl_context
+        self.handshake_timeout = max(0.1, float(handshake_timeout))
+        super().__init__(server_address, handler)
+
+    def get_request(self):
+        connection, address = super().get_request()
+        try:
+            connection.settimeout(self.handshake_timeout)
+            secure_connection = self.ssl_context.wrap_socket(
+                connection,
+                server_side=True,
+                do_handshake_on_connect=False,
+            )
+        except Exception:
+            connection.close()
+            raise
+        return secure_connection, address
+
+    def process_request_thread(self, request, client_address):
+        try:
+            request.do_handshake()
+        except (OSError, ssl.SSLError):
+            self.shutdown_request(request)
+            return
+        super().process_request_thread(request, client_address)
+
+
 class MonitoringServer:
     def __init__(
         self,
@@ -251,10 +282,12 @@ class MonitoringServer:
             context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_key_file)
         handler = self._handler_class()
-        self.httpd = ThreadingHTTPServer((host, int(port)), handler)
+        self.httpd = (
+            ThreadingTLSHTTPServer((host, int(port)), handler, ssl_context=context)
+            if context is not None
+            else ThreadingHTTPServer((host, int(port)), handler)
+        )
         self.httpd.daemon_threads = True
-        if context is not None:
-            self.httpd.socket = context.wrap_socket(self.httpd.socket, server_side=True)
         self.thread: threading.Thread | None = None
 
     @property
