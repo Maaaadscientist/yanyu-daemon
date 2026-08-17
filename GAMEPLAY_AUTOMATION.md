@@ -434,7 +434,7 @@ python3.12 tracking_click.py --no-stop-hotkey
 
 ### 12.2 人工输入暂停与断点恢复
 
-当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。调度器采用“检测到人工输入就让权”的方式处理：
+当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。2026-08-17 在重新授予 Python 辅助功能权限后再次测试：private/HID 两种事件源均能在不移动光标、不抢终端或 ToDesk 前台的情况下投递到游戏 PID，但登录页“账号登录”按钮没有响应；辅助功能树也只有一个通用 `AXTextArea`，没有游戏内部控件。该权限对前台自动化和人工输入检测有用，但不会让 UIKit 游戏画布接受后台点击。调度器继续采用“检测到人工输入就让权”的方式处理：
 
 1. `pynput` 全局监听物理鼠标移动、点击、滚轮和键盘按下。
 2. `pyautogui` 的移动、点击和拖动被包在 `automation_input()` 保护区内，并带短暂事件回传宽限期，不会把脚本自己的事件判成人工输入。
@@ -506,29 +506,45 @@ http://127.0.0.1:8765
 
 页面包含任务/资源点状态、断点、操作日志、采集台账、估算汇总和暂停/恢复/停止控制。精确点击会立即追加到 `resource_history.jsonl`；数量代表采集事件估算，网页手工调整会标记为非估算记录。
 
+所有 POST 接口都要求 `X-Yanyu-Request: dashboard` 请求头，页面会自动添加；局域网认证模式还必须通过 HTTP Basic 验证。
+
 只查看文件而不打开游戏：
 
 ```bash
 python3.12 monitor_server.py --host 127.0.0.1 --port 8765
 ```
 
-独立模式不附着调度器，控制按钮不可用。默认只监听本机；不要把无认证控制 API 直接暴露到局域网或公网。
+独立模式不附着调度器，控制按钮不可用。绑定本机回环地址时仍可手工调整台账；未认证地绑定局域网地址时，所有 POST 都会被拒绝，只允许查看。
 
-### 12.6 远程恢复
+### 12.6 带认证的局域网控制
 
-局域网 `8766` 页面只负责查看。需要远程恢复时，让调度器的控制页继续绑定 `127.0.0.1:8765`，从另一台电脑建立 SSH 隧道：
-
-```bash
-ssh -N -L 8765:127.0.0.1:8765 mac@192.168.1.3
-```
-
-随后在远程电脑打开 `http://127.0.0.1:8765`。普通“恢复”会校验地图坐标；马车地图等 OCR 不可读界面必须先人工确认画面仍与断点一致，再点“强制恢复”。也可直接执行：
+直接在局域网开放调度器控制时，程序强制要求随机密码和 TLS，缺少任意一项都会拒绝启动控制服务。首次在游戏 Mac 上创建私密文件：
 
 ```bash
-ssh mac@192.168.1.3 'curl -fsS -X POST http://127.0.0.1:8765/api/control/force-resume'
+CONTROL_DIR="$HOME/.config/yanyu-daemon"
+mkdir -p "$CONTROL_DIR" && chmod 700 "$CONTROL_DIR"
+umask 077
+python3.12 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$CONTROL_DIR/web-password"
+openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+  -keyout "$CONTROL_DIR/web-key.pem" \
+  -out "$CONTROL_DIR/web-cert.pem" \
+  -subj '/CN=192.168.1.3' \
+  -addext 'subjectAltName=IP:192.168.1.3,IP:127.0.0.1,DNS:localhost'
+chmod 600 "$CONTROL_DIR/web-password" "$CONTROL_DIR/web-key.pem"
 ```
 
-该方式要求在 macOS 共享设置中开启“远程登录”。不要把 `8765` 直接监听到局域网或映射到公网。
+启动参数：
+
+```bash
+python3.12 tracking_click.py \
+  --web-host 0.0.0.0 --web-port 8765 \
+  --web-auth-user yanyu \
+  --web-auth-token-file "$HOME/.config/yanyu-daemon/web-password" \
+  --web-tls-cert-file "$HOME/.config/yanyu-daemon/web-cert.pem" \
+  --web-tls-key-file "$HOME/.config/yanyu-daemon/web-key.pem"
+```
+
+另一台局域网设备访问 `https://192.168.1.3:8765`，用户名为 `yanyu`，密码保存在 `~/.config/yanyu-daemon/web-password`。首次访问需核对并接受自签名证书；其 SHA-256 指纹可用 `openssl x509 -in ~/.config/yanyu-daemon/web-cert.pem -noout -fingerprint -sha256` 查看。普通“恢复”仍校验地图坐标，OCR 不可读时必须先人工确认画面，再使用“强制恢复”。`8766` 保持只读，两个端口都不得映射到公网。
 
 ## 13. 游戏更新后的修复流程
 

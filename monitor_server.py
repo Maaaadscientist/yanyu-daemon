@@ -1,7 +1,12 @@
 import argparse
+import base64
+import hmac
+import ipaddress
 import json
 import mimetypes
+import os
 import signal
+import ssl
 import threading
 from datetime import datetime, timedelta
 from http import HTTPStatus
@@ -10,6 +15,35 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from resource_catalog import ResourceLedger, policy_for_task, read_jsonl_tail
+
+
+AUTH_REALM = "Yanyu Scheduler"
+WRITE_REQUEST_HEADER = "X-Yanyu-Request"
+WRITE_REQUEST_VALUE = "dashboard"
+
+
+def read_auth_token_file(path: str | Path) -> str:
+    token_path = Path(path).expanduser()
+    try:
+        token = token_path.read_text(encoding="utf-8").strip()
+        mode = token_path.stat().st_mode
+    except OSError as exc:
+        raise ValueError(f"cannot read web authentication token file {token_path}: {exc}") from exc
+    if len(token) < 24:
+        raise ValueError("web authentication token must contain at least 24 characters")
+    if os.name != "nt" and mode & 0o077:
+        raise ValueError(f"web authentication token file must use mode 600: {token_path}")
+    return token
+
+
+def is_loopback_host(host: str) -> bool:
+    value = str(host).strip().strip("[]")
+    if value.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
 
 
 class MonitorData:
@@ -184,14 +218,43 @@ class MonitoringServer:
         data: MonitorData,
         static_dir: str | Path | None = None,
         asset_dir: str | Path | None = None,
+        auth_username: str = "yanyu",
+        auth_token: str | None = None,
+        tls_cert_file: str | Path | None = None,
+        tls_key_file: str | Path | None = None,
     ) -> None:
         root = Path(__file__).resolve().parent
         self.static_dir = Path(static_dir) if static_dir else root / "web"
         self.asset_dir = Path(asset_dir) if asset_dir else root / "assets"
         self.data = data
+        self.auth_username = str(auth_username).strip()
+        self.auth_token = str(auth_token).strip() if auth_token else None
+        self.tls_cert_file = Path(tls_cert_file).expanduser() if tls_cert_file else None
+        self.tls_key_file = Path(tls_key_file).expanduser() if tls_key_file else None
+        loopback = is_loopback_host(host)
+        tls_enabled = self.tls_cert_file is not None or self.tls_key_file is not None
+        if bool(self.tls_cert_file) != bool(self.tls_key_file):
+            raise ValueError("both TLS certificate and key files are required")
+        if self.auth_token and len(self.auth_token) < 24:
+            raise ValueError("web authentication token must contain at least 24 characters")
+        if self.auth_token and (not self.auth_username or ":" in self.auth_username):
+            raise ValueError("web authentication username must be non-empty and cannot contain ':'")
+        if not loopback and self.auth_token and not tls_enabled:
+            raise ValueError("TLS is required when authentication is enabled on a LAN address")
+        if not loopback and data.runtime_control is not None and not self.auth_token:
+            raise ValueError("LAN scheduler control requires a web authentication token")
+        self.writes_allowed = loopback or bool(self.auth_token)
+        self.scheme = "https" if tls_enabled else "http"
+        context = None
+        if tls_enabled:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(certfile=self.tls_cert_file, keyfile=self.tls_key_file)
         handler = self._handler_class()
         self.httpd = ThreadingHTTPServer((host, int(port)), handler)
         self.httpd.daemon_threads = True
+        if context is not None:
+            self.httpd.socket = context.wrap_socket(self.httpd.socket, server_side=True)
         self.thread: threading.Thread | None = None
 
     @property
@@ -216,11 +279,16 @@ class MonitoringServer:
         data = self.data
         static_dir = self.static_dir
         asset_dir = self.asset_dir
+        auth_username = self.auth_username
+        auth_token = self.auth_token
+        writes_allowed = self.writes_allowed
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "YanyuMonitor/1.0"
 
             def do_GET(self):
+                if not self._authorized():
+                    return self._unauthorized()
                 parsed = urlparse(self.path)
                 query = parse_qs(parsed.query)
                 if parsed.path == "/api/status":
@@ -240,6 +308,21 @@ class MonitoringServer:
                 return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
             def do_POST(self):
+                if not self._authorized():
+                    return self._unauthorized()
+                if not writes_allowed:
+                    return self._json(
+                        {"error": "this unauthenticated LAN monitor is read-only"},
+                        HTTPStatus.FORBIDDEN,
+                    )
+                if not hmac.compare_digest(
+                    self.headers.get(WRITE_REQUEST_HEADER, ""),
+                    WRITE_REQUEST_VALUE,
+                ):
+                    return self._json(
+                        {"error": f"missing required {WRITE_REQUEST_HEADER} header"},
+                        HTTPStatus.FORBIDDEN,
+                    )
                 parsed = urlparse(self.path)
                 try:
                     payload = self._body()
@@ -254,6 +337,25 @@ class MonitoringServer:
 
             def log_message(self, _format, *_args):
                 return
+
+            def _authorized(self) -> bool:
+                if not auth_token:
+                    return True
+                scheme, separator, encoded = self.headers.get("Authorization", "").partition(" ")
+                if not separator or scheme.lower() != "basic":
+                    return False
+                try:
+                    supplied = base64.b64decode(encoded, validate=True).decode("utf-8")
+                except (ValueError, UnicodeDecodeError):
+                    return False
+                return hmac.compare_digest(supplied, f"{auth_username}:{auth_token}")
+
+            def _unauthorized(self):
+                return self._json(
+                    {"error": "authentication required"},
+                    HTTPStatus.UNAUTHORIZED,
+                    headers={"WWW-Authenticate": f'Basic realm="{AUTH_REALM}", charset="UTF-8"'},
+                )
 
             def _body(self) -> dict:
                 try:
@@ -272,12 +374,14 @@ class MonitoringServer:
                     raise ValueError("request body must be a JSON object")
                 return value
 
-            def _json(self, payload, status=HTTPStatus.OK):
+            def _json(self, payload, status=HTTPStatus.OK, headers=None):
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
+                for name, value in (headers or {}).items():
+                    self.send_header(name, value)
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -349,13 +453,26 @@ def main():
     parser.add_argument("--state-file", default="scheduler_state.json")
     parser.add_argument("--event-file", default="scheduler_events.jsonl")
     parser.add_argument("--resource-history", default="resource_history.jsonl")
+    parser.add_argument("--auth-user", default="yanyu")
+    parser.add_argument("--auth-token-file")
+    parser.add_argument("--tls-cert-file")
+    parser.add_argument("--tls-key-file")
     args = parser.parse_args()
+    auth_token = read_auth_token_file(args.auth_token_file) if args.auth_token_file else None
     data = MonitorData(
         state_file=args.state_file,
         event_file=args.event_file,
         resource_history=args.resource_history,
     )
-    server = MonitoringServer(host=args.host, port=args.port, data=data)
+    server = MonitoringServer(
+        host=args.host,
+        port=args.port,
+        data=data,
+        auth_username=args.auth_user,
+        auth_token=auth_token,
+        tls_cert_file=args.tls_cert_file,
+        tls_key_file=args.tls_key_file,
+    )
     stopped = threading.Event()
 
     def request_stop(_signum, _frame):
@@ -364,7 +481,7 @@ def main():
     previous = signal.signal(signal.SIGINT, request_stop)
     server.start()
     host, port = server.address
-    print(f"Read-only resource monitor: http://{host}:{port}")
+    print(f"Read-only resource monitor: {server.scheme}://{host}:{port}")
     try:
         stopped.wait()
     finally:

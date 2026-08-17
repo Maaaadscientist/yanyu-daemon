@@ -66,7 +66,10 @@ function statusCell(status) {
 
 async function request(path, options = {}) {
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Yanyu-Request": "dashboard"
+    },
     ...options
   });
   const payload = await response.json();

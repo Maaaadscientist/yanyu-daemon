@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from coordinates import *
-from monitor_server import MonitorData, MonitoringServer
+from monitor_server import MonitorData, MonitoringServer, read_auth_token_file
 from resource_catalog import (
     ResourceLedger,
     infer_legacy_anchor_specs,
@@ -199,6 +199,13 @@ def parse_args():
     )
     parser.add_argument("--web-host", default="127.0.0.1", help="Monitoring service bind address.")
     parser.add_argument("--web-port", type=int, default=8765, help="Monitoring service port.")
+    parser.add_argument("--web-auth-user", default="yanyu", help="HTTP Basic username for the dashboard.")
+    parser.add_argument(
+        "--web-auth-token-file",
+        help="Mode-600 file containing the HTTP Basic password. Required for LAN control.",
+    )
+    parser.add_argument("--web-tls-cert-file", help="TLS certificate file for authenticated LAN control.")
+    parser.add_argument("--web-tls-key-file", help="TLS private-key file for authenticated LAN control.")
     parser.add_argument("--no-web", action="store_true", help="Disable the monitoring web service.")
     return parser.parse_args()
 
@@ -1064,6 +1071,12 @@ def main():
     hotkey = SchedulerStopHotkey(args.stop_hotkey, stop_event, args.log_jsonl)
     monitor = None
     if not args.no_web:
+        try:
+            web_auth_token = (
+                read_auth_token_file(args.web_auth_token_file) if args.web_auth_token_file else None
+            )
+        except ValueError as exc:
+            raise SystemExit(f"Cannot start monitoring service: {exc}") from exc
         monitor_data = MonitorData(
             state_file=args.state_file,
             event_file=args.log_jsonl,
@@ -1076,8 +1089,16 @@ def main():
             ),
         )
         try:
-            monitor = MonitoringServer(host=args.web_host, port=args.web_port, data=monitor_data)
-        except OSError as exc:
+            monitor = MonitoringServer(
+                host=args.web_host,
+                port=args.web_port,
+                data=monitor_data,
+                auth_username=args.web_auth_user,
+                auth_token=web_auth_token,
+                tls_cert_file=args.web_tls_cert_file,
+                tls_key_file=args.web_tls_key_file,
+            )
+        except (OSError, ValueError) as exc:
             print(f"Cannot bind monitoring service on {args.web_host}:{args.web_port}: {exc}")
     previous_sigint_handler = signal.getsignal(signal.SIGINT)
 
@@ -1100,7 +1121,7 @@ def main():
         if monitor is not None:
             monitor.start()
             host, port = monitor.address
-            print(f"Resource monitor: http://{host}:{port}")
+            print(f"Resource monitor: {monitor.scheme}://{host}:{port}")
         print_schedule(state)
         print(f"Starting scheduler in {args.startup_delay:g}s")
         automation.wait_seconds(args.startup_delay)

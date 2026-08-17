@@ -1,6 +1,9 @@
+import base64
 import json
 import tempfile
+import threading
 import unittest
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,7 +12,13 @@ from types import SimpleNamespace
 import coordinates
 import tracking_click
 from coordinates import bear1, bear2, bear7, bear14, bear_tianshan, cow2, pig1, pos
-from monitor_server import MonitorData, MonitoringServer
+from monitor_server import (
+    WRITE_REQUEST_HEADER,
+    WRITE_REQUEST_VALUE,
+    MonitorData,
+    MonitoringServer,
+    read_auth_token_file,
+)
 from resource_catalog import MAP_COW_TASKS, ResourceLedger, infer_legacy_anchor_specs
 
 
@@ -53,6 +62,31 @@ class FakeRuntimeControl:
 
     def clear_checkpoint(self):
         return None
+
+
+class FakeWebRuntimeControl:
+    def __init__(self):
+        self.stop_event = threading.Event()
+        self.resume_requests = []
+
+    def status_snapshot(self):
+        return {
+            "paused": True,
+            "reason": "test",
+            "source": "test",
+            "paused_at": None,
+            "active_pause_seconds": 0,
+            "total_pause_seconds": 0,
+            "checkpoint": {"task": "bear5", "next_action_index": 6},
+            "context": {"phase": "before_action"},
+        }
+
+    def request_pause(self, **_kwargs):
+        return False
+
+    def request_resume(self, **kwargs):
+        self.resume_requests.append(kwargs)
+        return True
 
 
 class ResourcesAndMonitorTests(unittest.TestCase):
@@ -335,7 +369,10 @@ class ResourcesAndMonitorTests(unittest.TestCase):
                     data=json.dumps(
                         {"task": "pig1", "category": "pen_livestock", "quantity": 2, "unit": "只"}
                     ).encode(),
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        WRITE_REQUEST_HEADER: WRITE_REQUEST_VALUE,
+                    },
                     method="POST",
                 )
                 with urllib.request.urlopen(request) as response:
@@ -346,6 +383,119 @@ class ResourcesAndMonitorTests(unittest.TestCase):
         self.assertEqual(status["tasks"][0]["status"], "ready")
         self.assertTrue(adjustment["ok"])
         self.assertEqual(adjustment["record"]["quantity"], 2)
+
+    def test_authenticated_monitor_rejects_missing_credentials_and_cross_site_posts(self):
+        token = "a" * 32
+        runtime = FakeWebRuntimeControl()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = MonitorData(
+                state_file=root / "state.json",
+                event_file=root / "events.jsonl",
+                resource_history=root / "resources.jsonl",
+                runtime_control=runtime,
+            )
+            server = MonitoringServer(
+                host="127.0.0.1",
+                port=0,
+                data=data,
+                auth_username="yanyu",
+                auth_token=token,
+            )
+            server.start()
+            host, port = server.address
+            base_url = f"http://{host}:{port}"
+            authorization = "Basic " + base64.b64encode(f"yanyu:{token}".encode()).decode()
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as unauthenticated:
+                    urllib.request.urlopen(f"{base_url}/api/status")
+                self.assertEqual(unauthenticated.exception.code, 401)
+                self.assertIn("Basic", unauthenticated.exception.headers["WWW-Authenticate"])
+
+                status_request = urllib.request.Request(
+                    f"{base_url}/api/status",
+                    headers={"Authorization": authorization},
+                )
+                with urllib.request.urlopen(status_request) as response:
+                    status = json.loads(response.read())
+
+                untrusted_post = urllib.request.Request(
+                    f"{base_url}/api/control/force-resume",
+                    data=b"{}",
+                    headers={"Authorization": authorization, "Content-Type": "application/json"},
+                    method="POST",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as forbidden:
+                    urllib.request.urlopen(untrusted_post)
+                self.assertEqual(forbidden.exception.code, 403)
+
+                trusted_post = urllib.request.Request(
+                    f"{base_url}/api/control/force-resume",
+                    data=b"{}",
+                    headers={
+                        "Authorization": authorization,
+                        "Content-Type": "application/json",
+                        WRITE_REQUEST_HEADER: WRITE_REQUEST_VALUE,
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(trusted_post) as response:
+                    resumed = json.loads(response.read())
+            finally:
+                server.stop()
+
+        self.assertTrue(status["scheduler_attached"])
+        self.assertTrue(resumed["ok"])
+        self.assertEqual(runtime.resume_requests, [{"source": "web", "force": True}])
+
+    def test_lan_scheduler_control_requires_authentication_and_tls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = MonitorData(
+                state_file=root / "state.json",
+                event_file=root / "events.jsonl",
+                resource_history=root / "resources.jsonl",
+                runtime_control=FakeWebRuntimeControl(),
+            )
+            with self.assertRaisesRegex(ValueError, "authentication token"):
+                MonitoringServer(host="0.0.0.0", port=0, data=data)
+            with self.assertRaisesRegex(ValueError, "TLS is required"):
+                MonitoringServer(host="0.0.0.0", port=0, data=data, auth_token="b" * 32)
+
+    def test_unauthenticated_lan_monitor_rejects_all_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = MonitorData(
+                state_file=root / "state.json",
+                event_file=root / "events.jsonl",
+                resource_history=root / "resources.jsonl",
+            )
+            server = MonitoringServer(host="0.0.0.0", port=0, data=data)
+            server.start()
+            _host, port = server.address
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/acquisitions/adjust",
+                data=json.dumps({"task": "pig1", "quantity": 1}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with self.assertRaises(urllib.error.HTTPError) as forbidden:
+                    urllib.request.urlopen(request)
+            finally:
+                server.stop()
+
+        self.assertEqual(forbidden.exception.code, 403)
+
+    def test_auth_token_file_requires_private_permissions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            token_path = Path(directory, "web-token")
+            token_path.write_text("c" * 32, encoding="utf-8")
+            token_path.chmod(0o600)
+            self.assertEqual(read_auth_token_file(token_path), "c" * 32)
+            token_path.chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "mode 600"):
+                read_auth_token_file(token_path)
 
     def test_resumed_task_uses_original_pause_baseline_and_start_time(self):
         original_start = datetime.now() - timedelta(minutes=8)

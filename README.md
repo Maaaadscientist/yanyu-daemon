@@ -539,38 +539,78 @@ POST /api/control/stop
 POST /api/acquisitions/adjust
 ```
 
+Every POST must include `X-Yanyu-Request: dashboard`; authenticated LAN requests must also include HTTP Basic credentials. The bundled dashboard supplies the header automatically.
+
 Start a monitor-only process without opening or controlling the game:
 
 ```bash
 python3.12 monitor_server.py --host 127.0.0.1 --port 8765
 ```
 
-Monitor-only mode is read-only except for acquisition adjustments. Scheduler controls return an error until the dashboard is hosted by `tracking_click.py`. Keep the default loopback host; the control API has no remote-user authentication and should not be exposed directly to a network.
+Monitor-only mode has no scheduler controls. A loopback-only monitor can accept acquisition adjustments; an unauthenticated monitor bound to a LAN address rejects every POST and is strictly read-only.
 
-### Secure Remote Resume
+### Authenticated LAN Control
 
-Keep the integrated scheduler dashboard on `127.0.0.1:8765`. From another Mac or Linux machine on the LAN, create an SSH tunnel:
+Direct LAN control requires both a mode-600 password file and TLS. The server refuses to expose an attached scheduler on a non-loopback address when either protection is missing. Create the private files once on the game Mac:
 
 ```bash
-ssh -N -L 8765:127.0.0.1:8765 mac@192.168.1.3
+CONTROL_DIR="$HOME/.config/yanyu-daemon"
+mkdir -p "$CONTROL_DIR"
+chmod 700 "$CONTROL_DIR"
+umask 077
+python3.12 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$CONTROL_DIR/web-password"
+openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+  -keyout "$CONTROL_DIR/web-key.pem" \
+  -out "$CONTROL_DIR/web-cert.pem" \
+  -subj '/CN=192.168.1.3' \
+  -addext 'subjectAltName=IP:192.168.1.3,IP:127.0.0.1,DNS:localhost'
+chmod 600 "$CONTROL_DIR/web-password" "$CONTROL_DIR/web-key.pem"
 ```
 
-Open `http://127.0.0.1:8765` on the remote machine. The page is now carried through SSH and its pause, normal resume, force resume, and stop controls are attached to the scheduler. The public LAN page on port `8766` remains monitor-only.
-
-For command-line recovery without opening a browser:
+Start the scheduler with authenticated HTTPS control:
 
 ```bash
-# Inspect the checkpoint first.
-ssh mac@192.168.1.3 'curl -fsS http://127.0.0.1:8765/api/status'
+python3.12 tracking_click.py \
+  --web-host 0.0.0.0 \
+  --web-port 8765 \
+  --web-auth-user yanyu \
+  --web-auth-token-file "$HOME/.config/yanyu-daemon/web-password" \
+  --web-tls-cert-file "$HOME/.config/yanyu-daemon/web-cert.pem" \
+  --web-tls-key-file "$HOME/.config/yanyu-daemon/web-key.pem"
+```
+
+Open `https://192.168.1.3:8765` from another LAN device. The HTTP Basic username is `yanyu`; read the generated password on the game Mac with:
+
+```bash
+cat "$HOME/.config/yanyu-daemon/web-password"
+```
+
+The generated certificate is self-signed. Verify its SHA-256 fingerprint before accepting or importing it on another device:
+
+```bash
+openssl x509 -in "$HOME/.config/yanyu-daemon/web-cert.pem" -noout -fingerprint -sha256
+```
+
+Authenticated command-line control must include both Basic credentials and the custom write header:
+
+```bash
+PASSWORD=$(cat "$HOME/.config/yanyu-daemon/web-password")
+
+# Inspect the checkpoint first. --insecure is only for the locally generated certificate.
+curl --insecure --user "yanyu:$PASSWORD" https://127.0.0.1:8765/api/status
 
 # Use normal resume when map and coordinates are readable and unchanged.
-ssh mac@192.168.1.3 'curl -fsS -X POST http://127.0.0.1:8765/api/control/resume'
+curl --insecure --user "yanyu:$PASSWORD" \
+  -H 'X-Yanyu-Request: dashboard' -X POST \
+  https://127.0.0.1:8765/api/control/resume
 
 # Use force resume only after visually confirming an unreadable overlay such as the carriage map.
-ssh mac@192.168.1.3 'curl -fsS -X POST http://127.0.0.1:8765/api/control/force-resume'
+curl --insecure --user "yanyu:$PASSWORD" \
+  -H 'X-Yanyu-Request: dashboard' -X POST \
+  https://127.0.0.1:8765/api/control/force-resume
 ```
 
-Enable macOS `System Settings > General > Sharing > Remote Login` for the `mac` account before using SSH. Do not bind the unauthenticated scheduler control API to `0.0.0.0` or forward port `8765` from the router.
+The public `http://192.168.1.3:8766` page remains monitor-only. Do not forward either port from the router or expose the self-signed service to the internet. An SSH tunnel to a loopback-only service remains the preferred option outside the trusted LAN.
 
 Change the integrated address or disable the service:
 
@@ -716,7 +756,7 @@ This client was tested with three supported no-cursor approaches:
 - explicit target PID and window routing fields;
 - macOS Accessibility `AXPress` discovery.
 
-The UIKit-based game client ignored PID-targeted mouse events even while frontmost, and its Accessibility tree exposes the game canvas as one generic element rather than individual controls. A global HID event works, but moves the system cursor while the event is active. Therefore it is not a safe background backend for simultaneous desktop use.
+The test was repeated after granting Python Accessibility control on 2026-08-17. The Accessibility tree then exposed one generic pressable `AXTextArea`, but still no game controls. Private-source and HID-source PID events were aimed at the visible account-login button while Terminal or ToDesk remained frontmost: both preserved the cursor exactly and both were ignored by the game. A global HID event works, but moves the system cursor while the event is active. The permission is still required for foreground automation and input detection; it does not make this UIKit canvas accept background clicks.
 
 Run the read-only Accessibility inspection:
 
