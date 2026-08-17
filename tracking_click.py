@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import signal
 import threading
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from coordinates import *
 from game_session import LOGIN_STATES, GamePeriodReader, GameSessionManager, SessionWatchdog
+from input_takeover import DesktopTakeoverHUD
 from monitor_server import MonitorData, MonitoringServer, read_auth_token_file
 from resource_catalog import (
     ResourceLedger,
@@ -17,7 +19,12 @@ from resource_catalog import (
     policy_for_task,
     smart_anchor_specs,
 )
-from runtime_control import RuntimeControl
+from runtime_control import (
+    CONTINUE_STEP,
+    RESTART_TASK,
+    AutomationRecoveryHandoff,
+    RuntimeControl,
+)
 from smart_automation import StateReadError, SmartProcedureRunner, load_procedures
 
 
@@ -294,7 +301,17 @@ def parse_args():
     parser.add_argument(
         "--resume-hotkey",
         default="<ctrl>+<alt>+r",
-        help="Global hotkey that validates the checkpoint and resumes automation.",
+        help="Global hotkey that validates state and continues at the current checkpoint step.",
+    )
+    parser.add_argument(
+        "--restart-hotkey",
+        default="<ctrl>+<alt>+<shift>+r",
+        help="Global hotkey that abandons the middle checkpoint and restarts its task.",
+    )
+    parser.add_argument(
+        "--pause-hotkey",
+        default="<ctrl>+<alt>+p",
+        help="Global hotkey that immediately interrupts automation and records a checkpoint.",
     )
     parser.add_argument(
         "--resume-delay-seconds",
@@ -312,6 +329,21 @@ def parse_args():
         "--no-human-input-pause",
         action="store_true",
         help="Disable physical mouse/keyboard pause detection; web/manual pause remains available.",
+    )
+    parser.add_argument(
+        "--input-pause-policy",
+        choices=("gesture", "immediate"),
+        default="gesture",
+        help="Require a sustained mouse gesture or pause immediately on ordinary physical input.",
+    )
+    parser.add_argument("--takeover-window-seconds", type=float, default=3.0)
+    parser.add_argument("--takeover-required-seconds", type=float, default=2.0)
+    parser.add_argument("--takeover-max-gap-seconds", type=float, default=0.30)
+    parser.add_argument("--takeover-min-distance-pixels", type=float, default=1.0)
+    parser.add_argument(
+        "--no-takeover-hud",
+        action="store_true",
+        help="Disable the click-through desktop takeover progress HUD.",
     )
     parser.add_argument(
         "--resource-history",
@@ -915,31 +947,45 @@ def run_task(
     session_manager=None,
 ):
     runtime_control = getattr(automation, "runtime_control", None)
-    resume_checkpoint = resume_checkpoint if resume_checkpoint and resume_checkpoint.get("task") == task.name else None
-    if resume_checkpoint:
-        recovery_ticket = recovery_ticket or {
-            "task": task.name,
-            "recovery_mode": "restart_task",
-            "abandoned_checkpoint": dict(resume_checkpoint),
-        }
-        resume_checkpoint = None
+    resume_checkpoint = (
+        resume_checkpoint
+        if resume_checkpoint
+        and resume_checkpoint.get("task") == task.name
+        and resume_checkpoint.get("recovery_mode") in {None, CONTINUE_STEP}
+        else None
+    )
     recovery_ticket = recovery_ticket if recovery_ticket and recovery_ticket.get("task") == task.name else None
     invoked_at = datetime.now()
-    started_at = invoked_at
+    started_at = parse_optional_datetime((resume_checkpoint or {}).get("task_started_at")) or invoked_at
     default_pause_baseline = runtime_control.total_pause_seconds if runtime_control is not None else 0.0
-    pause_at_start = max(0.0, float(default_pause_baseline))
+    pause_at_start = max(
+        0.0,
+        float((resume_checkpoint or {}).get("task_pause_baseline", default_pause_baseline)),
+    )
     original_next_due = state[task.name]["next_due"]
-    resume_route_index = 1
-    resume_action_index = 1
-    scheduled_wait_seconds = 0.0
+    resume_route_index = max(1, int((resume_checkpoint or {}).get("route_index", 1)))
+    resume_action_index = max(1, int((resume_checkpoint or {}).get("next_action_index", 1)))
+    if resume_route_index > len(task.routes):
+        raise ValueError(
+            f"Resume route index {resume_route_index} exceeds task route count {len(task.routes)}."
+        )
+    scheduled_wait_seconds = max(
+        0.0,
+        float((resume_checkpoint or {}).get("scheduled_wait_seconds", 0.0)),
+    )
     target_label = f" target={scheduled_for.isoformat(timespec='milliseconds')}" if scheduled_for else ""
-    resume_label = " recovery=restart_task" if recovery_ticket else ""
+    if resume_checkpoint:
+        resume_label = f" recovery=continue_step route:{resume_route_index}/action:{resume_action_index}"
+    else:
+        resume_label = " recovery=restart_task" if recovery_ticket else ""
     print(
         f"{invoked_at:%Y-%m-%d %H:%M:%S} start {task.name}{target_label}{resume_label}: "
         f"{', '.join(task.routes)}"
     )
     state[task.name]["last_started"] = started_at
-    state[task.name]["last_status"] = "recovering" if recovery_ticket else "running"
+    state[task.name]["last_status"] = (
+        "resuming" if resume_checkpoint else ("recovering" if recovery_ticket else "running")
+    )
     if not args.dry_run:
         state[task.name]["retry_not_before"] = None
     if runtime_control is not None:
@@ -962,6 +1008,7 @@ def run_task(
             "routes": task.routes,
             "scheduled_for": scheduled_for.isoformat(timespec="milliseconds") if scheduled_for else None,
             "lead_seconds": state[task.name].get("lead_seconds", 0.0),
+            "resume_checkpoint": resume_checkpoint,
             "recovery_ticket": recovery_ticket,
         },
     )
@@ -983,7 +1030,16 @@ def run_task(
             if route_name not in ROUTES and not is_smart:
                 raise KeyError(f"Route '{route_name}' is not defined in coordinates.py")
 
-            if not is_smart and getattr(smart_runner, "state_reader", None) is not None:
+            continuing_inside_route = (
+                resume_checkpoint
+                and route_index == resume_route_index
+                and resume_action_index > 1
+            )
+            if (
+                not is_smart
+                and not continuing_inside_route
+                and getattr(smart_runner, "state_reader", None) is not None
+            ):
                 ensure_non_current_carriage_origin(
                     route_name,
                     task_name=task.name,
@@ -993,6 +1049,12 @@ def run_task(
                 )
 
             print(f"route {route_name}")
+            if runtime_control is not None:
+                runtime_control.set_context(
+                    route=route_name,
+                    route_index=route_index,
+                    route_revision=route_revision(route_name),
+                )
             log_event(args.log_jsonl, {"event": "route_started", "task": task.name, "route": route_name})
             route_capture_dir = args.capture_dir if args.capture == "route" else None
             route_specs = resource_specs_for_route(task, route_name)
@@ -1251,13 +1313,27 @@ def run_task(
                     )
             log_event(args.log_jsonl, {"event": "route_completed", "task": task.name, "route": route_name})
             if runtime_control is not None:
-                runtime_control.set_context(
-                    task=task.name,
-                    route_index=route_index + 1,
-                    total_routes=len(task.routes),
-                    next_action_index=1,
-                    phase="between_routes",
-                )
+                if route_index < len(task.routes):
+                    runtime_control.replace_context(
+                        task=task.name,
+                        route=task.routes[route_index],
+                        route_index=route_index + 1,
+                        route_revision=route_revision(task.routes[route_index]),
+                        total_routes=len(task.routes),
+                        next_action_index=1,
+                        task_started_at=started_at.isoformat(timespec="milliseconds"),
+                        task_pause_baseline=pause_at_start,
+                        scheduled_wait_seconds=scheduled_wait_seconds,
+                        phase="between_routes",
+                    )
+                else:
+                    runtime_control.replace_context(
+                        task=task.name,
+                        task_started_at=started_at.isoformat(timespec="milliseconds"),
+                        task_pause_baseline=pause_at_start,
+                        scheduled_wait_seconds=scheduled_wait_seconds,
+                        phase="routes_completed",
+                    )
 
         completed_at = datetime.now()
         if args.dry_run:
@@ -1460,6 +1536,70 @@ def print_schedule(state):
         )
 
 
+def validate_continue_checkpoint(checkpoint, tasks):
+    task_name = checkpoint.get("task")
+    task = tasks.get(task_name)
+    if task is None:
+        raise ValueError(f"checkpoint task {task_name!r} is not active")
+    route_index = int(checkpoint.get("route_index", 0))
+    if route_index < 1 or route_index > len(task.routes):
+        raise ValueError("checkpoint route index is outside the current task")
+    route_name = task.routes[route_index - 1]
+    if checkpoint.get("route") != route_name:
+        raise ValueError(
+            f"checkpoint route changed: expected {route_name}, got {checkpoint.get('route')}"
+        )
+    actions = route_actions(route_name)
+    total_actions = len(actions)
+    saved_revision = checkpoint.get("route_revision")
+    current_revision = route_revision(route_name)
+    if not saved_revision:
+        raise ValueError("checkpoint has no route revision; use restart from the beginning")
+    if saved_revision != current_revision:
+        raise ValueError("checkpoint route definition changed; use restart from the beginning")
+    next_action_index = int(checkpoint.get("next_action_index", 0))
+    if next_action_index < 1 or next_action_index > total_actions + 1:
+        raise ValueError("checkpoint action index is outside the current route")
+
+
+def route_actions(route_name):
+    if route_name in PROCEDURES and PROCEDURES[route_name].get("enabled"):
+        return PROCEDURES[route_name]["actions"]
+    if route_name in ROUTES:
+        return ROUTES[route_name]
+    raise ValueError(f"checkpoint route {route_name!r} is no longer available")
+
+
+def route_revision(route_name):
+    actions = route_actions(route_name)
+    point_names = set()
+
+    def collect(value):
+        if isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                collect(item)
+        elif isinstance(value, str) and value in pos:
+            point_names.add(value)
+
+    collect(actions)
+    payload = {
+        "route": route_name,
+        "actions": actions,
+        "named_points": {name: pos[name] for name in sorted(point_names)},
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:16]
+
+
 def update_lead_time(task_state, observed_seconds, margin_seconds=2.0):
     measured = max(0.0, float(observed_seconds)) + max(0.0, float(margin_seconds))
     samples = max(0, int(task_state.get("lead_samples", 0)))
@@ -1497,13 +1637,22 @@ def main():
     from automation import GameAutomation
 
     stop_event = threading.Event()
+    takeover_hud = DesktopTakeoverHUD(enabled=not args.no_takeover_hud)
     runtime_control = RuntimeControl(
         stop_event=stop_event,
         state_file=args.control_state_file,
         resume_hotkey=args.resume_hotkey,
+        restart_hotkey=args.restart_hotkey,
+        pause_hotkey=args.pause_hotkey,
         resume_delay_seconds=args.resume_delay_seconds,
         coordinate_tolerance=args.resume_coordinate_tolerance,
         detect_human_input=not args.no_human_input_pause,
+        input_pause_policy=args.input_pause_policy,
+        takeover_window_seconds=args.takeover_window_seconds,
+        takeover_required_seconds=args.takeover_required_seconds,
+        takeover_max_gap_seconds=args.takeover_max_gap_seconds,
+        takeover_min_distance_pixels=args.takeover_min_distance_pixels,
+        takeover_hud=takeover_hud,
         event_logger=lambda event: log_event(args.log_jsonl, event),
     )
     automation = GameAutomation(
@@ -1517,6 +1666,9 @@ def main():
         timing_file=args.timing_file,
     )
     runtime_control.set_state_provider(smart_runner.state_reader.read_state)
+    runtime_control.set_continue_validator(
+        lambda checkpoint: validate_continue_checkpoint(checkpoint, tasks)
+    )
     event_logger = lambda event: log_event(args.log_jsonl, event)
     session_manager = GameSessionManager(
         automation,
@@ -1597,60 +1749,74 @@ def main():
         if not args.no_stop_hotkey:
             print(f"Global stop hotkey enabled: {args.stop_hotkey}")
         if not args.no_human_input_pause:
-            print(f"Human input pauses automation; resume hotkey: {args.resume_hotkey}")
+            print(
+                f"Human takeover policy: {args.input_pause_policy}; pause={args.pause_hotkey}, "
+                f"continue={args.resume_hotkey}, restart={args.restart_hotkey}"
+            )
         if monitor is not None:
             monitor.start()
             host, port = monitor.address
             print(f"Resource monitor: {monitor.scheme}://{host}:{port}")
         print_schedule(state)
         print(f"Starting scheduler in {args.startup_delay:g}s")
-        automation.wait_seconds(args.startup_delay)
+        try:
+            automation.wait_seconds(args.startup_delay)
+        except AutomationRecoveryHandoff:
+            pass
 
         while True:
-            automation.wait_seconds(0.0)
-            recovery_ticket = runtime_control.peek_resume_checkpoint()
-            recovery_task = (
-                recovery_ticket.get("task")
-                if recovery_ticket
-                and recovery_ticket.get("recovery_mode") == "restart_task"
-                and recovery_ticket.get("phase") == "restart_task"
+            try:
+                automation.wait_seconds(0.0)
+            except AutomationRecoveryHandoff:
+                continue
+            resume_ticket = runtime_control.peek_resume_checkpoint()
+            resume_mode = (resume_ticket or {}).get("recovery_mode")
+            expected_phase = resume_mode if resume_mode in {CONTINUE_STEP, RESTART_TASK} else None
+            resume_task = (
+                resume_ticket.get("task")
+                if resume_ticket and expected_phase and resume_ticket.get("phase") == expected_phase
                 else None
             )
-            if recovery_task in tasks:
-                recovery_ticket = runtime_control.consume_resume_checkpoint()
-            elif recovery_task:
+            if resume_task in tasks:
+                resume_ticket = runtime_control.consume_resume_checkpoint()
+            elif resume_task:
                 runtime_control.consume_resume_checkpoint()
-                print(f"Discarding recovery ticket for inactive task {recovery_task}.")
+                print(f"Discarding recovery ticket for inactive task {resume_task}.")
                 log_event(
                     args.log_jsonl,
                     {
                         "event": "automation_resume_checkpoint_discarded",
-                        "task": recovery_task,
+                        "task": resume_task,
+                        "mode": resume_mode,
                         "reason": "task_inactive",
                     },
                 )
-                recovery_ticket = None
-                recovery_task = None
-            elif recovery_ticket and not recovery_task:
+                resume_ticket = None
+                resume_task = None
+            elif resume_ticket and not resume_task:
                 runtime_control.consume_resume_checkpoint()
-                recovery_ticket = None
+                resume_ticket = None
 
-            if recovery_ticket and all_resources_ready(state, tasks):
+            if (
+                resume_ticket
+                and resume_mode == RESTART_TASK
+                and all_resources_ready(state, tasks)
+            ):
                 log_event(
                     args.log_jsonl,
                     {
                         "event": "recovery_full_cycle_selected",
-                        "abandoned_task": recovery_task,
+                        "abandoned_task": resume_task,
                         "reason": "all_active_resources_ready",
                     },
                 )
-                recovery_ticket = None
-                recovery_task = None
+                resume_ticket = None
+                resume_task = None
 
-            forced = run_now is not None or recovery_task is not None
+            forced = run_now is not None or resume_task is not None
             reserve_seconds = 0.0 if forced or args.once else max(0.0, args.precision_reserve_seconds)
-            if recovery_task:
-                names = [recovery_task]
+            if resume_task:
+                names = [resume_task]
             else:
                 names = due_task_names(
                     state,
@@ -1660,26 +1826,42 @@ def main():
                 )
             run_now = None
             batch_names = names if forced or args.once else names[:1]
+            recovery_handoff = False
             for name in batch_names:
                 if name not in tasks:
                     print(f"Skipping unknown/inactive task {name}")
                     continue
-                run_task(
-                    tasks[name],
-                    automation,
-                    smart_runner,
-                    args,
-                    state,
-                    scheduled_for=(
-                        state[name]["next_due"]
-                        if name == recovery_task
-                        else (None if forced else state[name]["next_due"])
-                    ),
-                    recovery_ticket=recovery_ticket if name == recovery_task else None,
-                    ledger=ledger,
-                    period_reader=period_reader,
-                    session_manager=session_manager,
-                )
+                try:
+                    run_task(
+                        tasks[name],
+                        automation,
+                        smart_runner,
+                        args,
+                        state,
+                        scheduled_for=(
+                            state[name]["next_due"]
+                            if name == resume_task
+                            else (None if forced else state[name]["next_due"])
+                        ),
+                        resume_checkpoint=(
+                            resume_ticket
+                            if name == resume_task and resume_mode == CONTINUE_STEP
+                            else None
+                        ),
+                        recovery_ticket=(
+                            resume_ticket
+                            if name == resume_task and resume_mode == RESTART_TASK
+                            else None
+                        ),
+                        ledger=ledger,
+                        period_reader=period_reader,
+                        session_manager=session_manager,
+                    )
+                except AutomationRecoveryHandoff:
+                    recovery_handoff = True
+                    break
+            if recovery_handoff:
+                continue
             completed_batch = completed_batch or bool(batch_names)
 
             if args.once or (args.wait_once and completed_batch) or (args.run_now is not None and not args.loop):
@@ -1689,7 +1871,10 @@ def main():
                 sleep_seconds = args.poll_seconds
             else:
                 sleep_seconds = args.poll_seconds if until_next is None else min(args.poll_seconds, until_next)
-            automation.wait_seconds(max(0.01, sleep_seconds))
+            try:
+                automation.wait_seconds(max(0.01, sleep_seconds))
+            except AutomationRecoveryHandoff:
+                continue
     except KeyboardInterrupt:
         print("Scheduler stopped by user.")
         log_event(

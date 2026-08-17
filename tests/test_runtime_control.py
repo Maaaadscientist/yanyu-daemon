@@ -5,9 +5,15 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from runtime_control import ResumeValidationError, RuntimeControl
+from runtime_control import (
+    CONTINUE_STEP,
+    RESTART_TASK,
+    AutomationRecoveryHandoff,
+    ResumeValidationError,
+    RuntimeControl,
+)
 
 
 class RuntimeControlTests(unittest.TestCase):
@@ -23,7 +29,12 @@ class RuntimeControlTests(unittest.TestCase):
     def test_synthetic_mouse_events_are_ignored_but_later_human_input_pauses(self):
         clock = [10.0]
         with tempfile.TemporaryDirectory() as directory:
-            control = self.make_control(directory, monotonic=lambda: clock[0], synthetic_grace_seconds=0.2)
+            control = self.make_control(
+                directory,
+                monotonic=lambda: clock[0],
+                synthetic_grace_seconds=0.2,
+                input_pause_policy="immediate",
+            )
             control.set_context(task="pig1", route="pig1", next_action_index=12, phase="before_action")
 
             with control.automation_input():
@@ -51,10 +62,12 @@ class RuntimeControlTests(unittest.TestCase):
             with self.assertRaises(ResumeValidationError):
                 control._validate_resume_state()
 
-            control.request_resume(source="test")
-            control.wait_if_paused()
+            control.request_resume(source="test", mode=RESTART_TASK)
+            with self.assertRaises(AutomationRecoveryHandoff) as handoff:
+                control.wait_if_paused()
 
             self.assertFalse(control.is_paused)
+            self.assertEqual(handoff.exception.mode, RESTART_TASK)
             resumed = control.consume_resume_checkpoint()
             self.assertEqual(resumed["recovery_mode"], "restart_task")
             self.assertEqual(resumed["next_action_index"], 1)
@@ -81,8 +94,9 @@ class RuntimeControlTests(unittest.TestCase):
                 }
             )
             control.request_pause(reason="session_login_provider")
-            control.request_resume(source="web")
-            control.wait_if_paused()
+            control.request_resume(source="web", mode=RESTART_TASK)
+            with self.assertRaises(AutomationRecoveryHandoff):
+                control.wait_if_paused()
 
             ticket = control.consume_resume_checkpoint()
 
@@ -90,6 +104,63 @@ class RuntimeControlTests(unittest.TestCase):
         self.assertFalse(calls[0]["force"])
         self.assertEqual(ticket["recovery_state"]["map"], "逻邪河谷")
         self.assertEqual(ticket["abandoned_checkpoint"]["next_action_index"], 6)
+
+    def test_continue_step_keeps_the_route_and_next_action_after_strict_state_validation(self):
+        current = {"map": "泉州", "coordinate": [17, 3]}
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(directory)
+            control.set_state_provider(lambda: current)
+            control.set_context(
+                task="bear4",
+                route="bear4",
+                route_index=1,
+                next_action_index=10,
+                phase="before_action",
+            )
+            control.request_pause(reason="pause_hotkey")
+            control._capture_checkpoint_state()
+            control.request_resume(source="test", mode=CONTINUE_STEP)
+            with self.assertRaises(AutomationRecoveryHandoff) as handoff:
+                control.wait_if_paused()
+
+            ticket = control.consume_resume_checkpoint()
+
+        self.assertEqual(ticket["recovery_mode"], CONTINUE_STEP)
+        self.assertEqual(handoff.exception.mode, CONTINUE_STEP)
+        self.assertEqual(ticket["route_index"], 1)
+        self.assertEqual(ticket["next_action_index"], 10)
+        self.assertEqual(ticket["recovery_state"]["coordinate"], [17, 3])
+
+    def test_a_pending_resume_request_cannot_be_overwritten(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(directory)
+            control.set_context(task="bear4", route="bear4", next_action_index=10)
+            control.request_pause(reason="pause_hotkey")
+
+            first = control.request_resume(source="web", mode=RESTART_TASK)
+            second = control.request_resume(source="web", mode=CONTINUE_STEP)
+
+            self.assertTrue(first)
+            self.assertFalse(second)
+            self.assertTrue(control.status_snapshot()["resume_pending"])
+
+    def test_continue_validator_rejects_a_route_changed_by_an_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(directory)
+            control.set_state_provider(lambda: {"map": "泉州", "coordinate": [17, 3]})
+            control.set_continue_validator(Mock(side_effect=ValueError("checkpoint route changed")))
+            control.set_context(
+                task="bear4",
+                route="old_bear4",
+                route_index=1,
+                next_action_index=10,
+                phase="before_action",
+            )
+            control.request_pause(reason="pause_hotkey")
+            control._capture_checkpoint_state()
+
+            with self.assertRaisesRegex(ResumeValidationError, "route changed"):
+                control._validate_resume_state()
 
     def test_paused_checkpoint_survives_process_recreation(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -105,7 +176,8 @@ class RuntimeControlTests(unittest.TestCase):
             self.assertTrue(raw["paused"])
 
             second.request_resume(source="test", force=True)
-            second.wait_if_paused()
+            with self.assertRaises(AutomationRecoveryHandoff):
+                second.wait_if_paused()
             self.assertFalse(second.is_paused)
 
     def test_listeners_share_one_keyboard_listener_for_all_hotkeys(self):
@@ -172,7 +244,15 @@ class RuntimeControlTests(unittest.TestCase):
 
             self.assertEqual(len(keyboard_listeners), 1)
             self.assertEqual(len(mouse_listeners), 1)
-            self.assertEqual([item.keys for item in hotkey_instances], ["<ctrl>+<alt>+r", "<ctrl>+c"])
+            self.assertEqual(
+                [item.keys for item in hotkey_instances],
+                [
+                    "<ctrl>+<alt>+r",
+                    "<ctrl>+<alt>+<shift>+r",
+                    "<ctrl>+<alt>+p",
+                    "<ctrl>+c",
+                ],
+            )
             self.assertTrue(keyboard_listeners[0].started)
             self.assertTrue(mouse_listeners[0].started)
 
@@ -192,7 +272,49 @@ class RuntimeControlTests(unittest.TestCase):
             self.assertFalse(control.is_paused)
 
             control._on_key_press("'x'")
+            self.assertFalse(control.is_paused)
+
+    def test_mouse_takeover_requires_sustained_movement(self):
+        clock = [20.0]
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(
+                directory,
+                monotonic=lambda: clock[0],
+                input_pause_policy="gesture",
+                takeover_window_seconds=0.5,
+                takeover_required_seconds=0.2,
+                takeover_max_gap_seconds=0.11,
+            )
+            control.set_context(task="bear5", route="bear5", next_action_index=5)
+            control._on_mouse_move(0, 0)
+            for index in range(1, 4):
+                clock[0] += 0.1
+                control._on_mouse_move(index * 5, 0)
+
             self.assertTrue(control.is_paused)
+            self.assertEqual(control.pending_checkpoint()["reason"], "mouse_takeover_gesture")
+
+    def test_cancelled_takeover_hold_is_counted_as_interruption_time(self):
+        clock = [20.0]
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(
+                directory,
+                monotonic=lambda: clock[0],
+                input_pause_policy="gesture",
+                takeover_window_seconds=0.5,
+                takeover_required_seconds=0.4,
+                takeover_max_gap_seconds=0.11,
+            )
+            control._on_mouse_move(0, 0)
+            clock[0] += 0.1
+            control._on_mouse_move(5, 0)
+            self.assertTrue(control.status_snapshot()["takeover"]["active"])
+
+            clock[0] += 0.6
+            control._update_takeover(control._gesture_detector.poll(now=clock[0]))
+
+            self.assertFalse(control.status_snapshot()["takeover"]["active"])
+            self.assertAlmostEqual(control.total_pause_seconds, 0.6)
 
 
 if __name__ == "__main__":

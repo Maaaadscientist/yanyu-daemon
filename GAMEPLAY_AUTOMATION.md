@@ -24,6 +24,8 @@
 | `control_recorder.py` | 录制鼠标、拖动、OCR 状态、刷新锚点和轻功连点组 |
 | `procedure_runner.py` | 独立读取状态、列出、dry-run 或运行一个智能流程 |
 | `tracking_click.py` | 7x24 调度、提前出发、精确刷新锚点、失败恢复 |
+| `runtime_control.py` | 接管仲裁、持久化断点、当前步骤续接和任务从头恢复 |
+| `input_takeover.py` | 3 秒滚动鼠标手势判定和桌面透明提示层 |
 | `recording_analyzer.py` | 量化录制、校验点、文字定位和快速连点间隔 |
 | `procedures/*.json` | 可执行智能流程和可复用公共片段 |
 
@@ -425,7 +427,7 @@ python3.12 tracking_click.py --only-task dali_pig --wait-once
 
 正在执行的 `rapid_clicks` 是例外。停止请求会等本组快速连点全部完成后再生效，避免多段轻功只执行一半而摔落。日志依次包含 `scheduler_hotkey_stop_requested` 和 `scheduler_stopped`，后者的 `reason` 为 `global_hotkey`。
 
-网页“安全停止”会结束整个调度器进程，因此与它绑定的 8765 控制服务也会消失；浏览器保留的旧页面会显示 `Failed to fetch`。独立的 8766 只读服务不受影响。只恢复控制服务而不立即执行过期任务时，使用 `--start-paused` 启动，确认状态后再从网页执行“安全从头恢复”。
+网页“停止进程”会结束整个调度器进程，因此与它绑定的 8765 控制服务也会消失。新版页面会在停止成功后终止轮询并提示转到 8766，只读服务不受影响；网络异常或旧版页面仍可能显示 `Failed to fetch`。只恢复控制服务而不立即执行过期任务时，使用 `--start-paused` 启动，再明确选择“继续当前步骤”或“从头恢复”。
 
 可自定义或禁用全局热键：
 
@@ -435,39 +437,53 @@ python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
 python3.12 tracking_click.py --no-stop-hotkey
 ```
 
-### 12.2 人工输入暂停与从头恢复
+### 12.2 人工接管、当前步骤续接与从头恢复
 
-当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。2026-08-17 在重新授予 Python 辅助功能权限后再次测试：private/HID 两种事件源均能在不移动光标、不抢终端或 ToDesk 前台的情况下投递到游戏 PID，但登录页“账号登录”按钮没有响应；辅助功能树也只有一个通用 `AXTextArea`，没有游戏内部控件。该权限对前台自动化和人工输入检测有用，但不会让 UIKit 游戏画布接受后台点击。调度器继续采用“检测到人工输入就让权”的方式处理：
+当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。2026-08-17 在重新授予 Python 辅助功能权限后再次测试：private/HID 两种事件源可以投递到游戏 PID，但登录页“账号登录”没有响应；辅助功能树也只有一个通用 `AXTextArea`，没有可单独操作的游戏控件。权限能支持前台控制和输入监听，但不能把 UIKit 游戏画布变成真正的后台窗口。
 
-1. `pynput` 全局监听物理鼠标移动、点击、滚轮和键盘按下。
-2. `pyautogui` 的移动、点击和拖动被包在 `automation_input()` 保护区内，并带短暂事件回传宽限期，不会把脚本自己的事件判成人工输入。
-3. 人工事件把 `pause_event` 置位；普通动作在下一个动作边界停住，尚未完成的相对 delay 保留剩余时间。
-4. 多段轻功 `rapid_clicks` 是原子动作，不在组内暂停。连点完成后立即响应暂停或停止，避免只跳一半。
-5. `runtime_control.json` 立即保存任务、路线序号、下一动作序号、动作标签、阶段、暂停原因和时间。
-6. 工作线程再用 Vision OCR 补充地图名与坐标。监听线程本身不做截图/OCR，避免阻塞系统输入回调。
+默认策略从“碰一下就暂停”改为可识别的主动接管：
 
-恢复不再要求用户复原旧地图和旧坐标，也绝不消费 `next_action_index`。按默认 `Ctrl-Alt-R` 或网页“安全从头恢复”后：
+1. `pyautogui` 的移动、点击和拖动包在 `automation_input()` 保护区并带事件回传宽限期，不会把脚本自身事件算成人工输入。
+2. 鼠标开始连续移动时，下一项非原子动作进入软暂停；桌面顶部出现不抢焦点、鼠标可穿透的半透明进度框。
+3. 判定窗口为滚动 3 秒，只有其中累计有效移动达到 2 秒才建立硬断点。相邻移动事件默认不得间隔超过 `0.30s`。
+4. 短暂移动不足阈值时，最多等本滚动窗口自然过期，随后关闭提示框并自动继续，不写断点。
+5. 普通按键、单击和滚轮在默认 `gesture` 策略下不再触发暂停，但会更新“最后人工输入”时间，从而使不安静的恢复倒计时被拒绝。
+6. `Ctrl-Alt-P` 不等待手势，立即申请硬暂停。工作线程在安全动作边界保存任务、路线、下一动作、阶段、原因和时间，再用 Vision OCR 补充地图与坐标。
+7. 多段轻功 `rapid_clicks` 仍是原子动作；接管或停止都必须等本组完成，避免中途摔落。
 
-1. 旧断点写入 `automation_checkpoint_abandoned`，只保留作审计。
-2. 若已在游戏内，只要求地图与坐标可读，不要求与旧断点一致。
-3. 若在登录页，依次识别并执行：`账号登录`、已保存账号的 `登录`、关闭更新公告、勾选协议、`开始游戏`。
-4. 检测到“其他设备上传过更新版本存档（或者设备登出过）”时，只点击 `确认` 强制下载服务器存档；恢复过程不输入密码，也不选择本地上传。
-5. 等待默认 3 秒安静倒计时；期间有新人工输入就拒绝本次恢复。
-6. 生成 `restart_task` 恢复票据，从任务第 1 条路线、第 1 个动作重新运行。
-7. 若所有活动资源都已刷新，不锁定旧任务，改由正常优先级从完整待执行队列开头选择。
+这里没有安装全局吞键/吞鼠标事件钩子。短输入仍可能到达 macOS 当前前台应用；程序只是在判定期间冻结自己的下一动作。完全拦截系统输入会同时危及 `Ctrl-C`、恢复键和远程救援通道，因此不作为默认或可远程开启的功能。
 
-网页“强制从头恢复”仅跳过无法识别页面时的会话检查，仍然从任务开头运行，不能恢复中间动作。可调整：
+四类控制必须区分：
+
+| 控制 | 默认热键 | 行为 |
+|---|---|---|
+| 中断控制 | `Ctrl-Alt-P` | 在安全边界硬暂停，持久化完整断点，进程和 8765 继续存在 |
+| 继续当前步骤 | `Ctrl-Alt-R` | 严格校验当前地图/坐标与断点一致，从记录的下一动作继续 |
+| 从头恢复 | `Ctrl-Alt-Shift-R` | 放弃中间动作，必要时恢复登录/服务器存档，从任务路线 1、动作 1 重跑 |
+| 停止进程 | `Ctrl-C` | 保存调度状态并结束进程，同时关闭附着的 8765 |
+
+“继续当前步骤”只有在以下条件全部满足时可用：断点包含活动任务、路线定义指纹、正数动作序号、允许续接的阶段、可读地图和可读坐标；脚本更新后任务仍启用，路线名称/序号、动作范围、动作定义及其引用的命名点位仍与当前定义一致；恢复时重新 OCR 的地图必须相同，坐标差不得超过 `--resume-coordinate-tolerance`，默认是 `0`。任一条件不满足都会拒绝请求并继续保持暂停。接受后会发出一次 `continue_step` 票据，旧调用栈立即退出，主循环只从该路线的 `next_action_index` 接管一次，之前的路线和动作不会重复。
+
+“从头恢复”会生成 `restart_task` 票据，并把旧断点作为审计数据保存。如果在登录页，会按当前页面依次处理 `账号登录`、已保存账号的 `登录`、更新公告、协议和 `开始游戏`；遇到异地更新提示只点 `确认` 下载服务器最新存档，不输入密码、不选择本地上传。随后任务从第一条路线重新执行，马车路线仍先检查当前地图，必要时经洛阳或南阳渡中转，避免点击被角色标记覆盖的当前城市图标。若所有活动资源都已经可用，则放弃旧任务优先级，按正常完整队列重新选择。
+
+网页“强制从头”只在页面无法识别时跳过会话校验，仍然不能续跑中间动作。恢复前有默认 3 秒安静倒计时；期间出现新人工输入会拒绝本次请求。暂停状态和断点保存在 `runtime_control.json`，即使进程退出，下次启动仍保持暂停。
+
+可调整：
 
 ```bash
+python3.12 tracking_click.py --pause-hotkey '<ctrl>+<alt>+p'
 python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
+python3.12 tracking_click.py --restart-hotkey '<ctrl>+<alt>+<shift>+r'
+python3.12 tracking_click.py --takeover-window-seconds 3 --takeover-required-seconds 2
+python3.12 tracking_click.py --takeover-max-gap-seconds 0.30
+python3.12 tracking_click.py --no-takeover-hud
+python3.12 tracking_click.py --input-pause-policy immediate
 python3.12 tracking_click.py --resume-delay-seconds 5
 python3.12 tracking_click.py --no-human-input-pause
 python3.12 tracking_click.py --session-check-seconds 10
 ```
 
-`SessionWatchdog` 默认每 15 秒只读识别账号入口、登录表单、游戏主页、服务器下载提示和异地登录提示。运行中命中这些页面会立即请求暂停并保存任务上下文。登录恢复是按当前页面推进的状态机，因此在公告页或下载确认页中途重启也不需要从账号入口重放。
-
-进程在暂停时退出不会丢失旧断点。下次启动继续保持暂停；安全恢复后，旧任务若仍需处理就整条重跑，已记录锚点且仍在冷却的资源交互会跳过。
+`--input-pause-policy immediate` 用于恢复旧行为，即普通键盘/鼠标事件立即建立硬断点。`SessionWatchdog` 默认每 15 秒只读识别账号入口、登录表单、游戏主页、服务器下载和异地登录页面，命中后不依赖手势，直接保存上下文并暂停。
 
 ### 12.3 暂停时间与刷新时间
 
@@ -476,11 +492,11 @@ python3.12 tracking_click.py --session-check-seconds 10
 | 时间 | 暂停时如何处理 |
 |---|---|
 | 游戏资源刷新时间 | 按真实墙钟继续，不因用户占用桌面而延后 |
-| 普通动作 delay | 暂停期间冻结；接受恢复后随整条路线重新计时 |
+| 普通动作 delay | 候选手势和硬暂停期间不消耗；当前步骤续接会从该动作的完整配置 delay 重新开始 |
 | `wait_until_scheduled` | 目标仍是固定墙钟；暂停期间到期则恢复后直接通过时间门 |
-| 移动/提前量学习 | 扣除人工暂停和提前到达后的空等，不污染移速样本 |
+| 移动/提前量学习 | 扣除候选软暂停、硬暂停和提前到达后的空等，不污染移速样本 |
 
-所以暂停发生在宰杀之后时，`next_due` 仍从真实宰杀点击计算；暂停发生在宰杀之前时，程序不会把暂停数小时误学成旅行变慢。
+所以接管发生在宰杀之后时，`next_due` 仍从真实宰杀点击计算；发生在宰杀之前时，程序不会把候选手势或暂停数小时误学成旅行变慢。
 
 ### 12.4 资源类型与精确锚点
 
@@ -524,7 +540,7 @@ python3.12 tracking_click.py --session-check-seconds 10
 http://127.0.0.1:8765
 ```
 
-页面包含任务/资源点状态、断点、操作日志、采集台账、估算汇总和暂停/恢复/停止控制。精确点击会立即追加到 `resource_history.jsonl`；数量代表采集事件估算，网页手工调整会标记为非估算记录。
+页面包含任务/资源点状态、断点、操作日志、采集台账、估算汇总，以及“中断控制”“继续当前步骤”“从头恢复”“强制从头”“停止进程”五类控制。精确点击会立即追加到 `resource_history.jsonl`；数量代表采集事件估算，网页手工调整会标记为非估算记录。
 
 所有 POST 接口都要求 `X-Yanyu-Request: dashboard` 请求头，页面会自动添加；局域网认证模式还必须通过 HTTP Basic 验证。
 
@@ -564,7 +580,7 @@ python3.12 tracking_click.py \
   --web-tls-key-file "$HOME/.config/yanyu-daemon/web-key.pem"
 ```
 
-另一台局域网设备访问 `https://192.168.1.3:8765`，用户名为 `yanyu`，密码保存在 `~/.config/yanyu-daemon/web-password`。首次访问需核对并接受自签名证书；其 SHA-256 指纹可用 `openssl x509 -in ~/.config/yanyu-daemon/web-cert.pem -noout -fingerprint -sha256` 查看。“安全从头恢复”可从已识别的登录页自动确认服务器最新存档；“强制从头恢复”只跳过会话识别，不会续跑旧动作。`8766` 保持只读，两个端口都不得映射到公网。
+另一台局域网设备访问 `https://192.168.1.3:8765`，用户名为 `yanyu`，密码保存在 `~/.config/yanyu-daemon/web-password`。首次访问需核对并接受自签名证书；其 SHA-256 指纹可用 `openssl x509 -in ~/.config/yanyu-daemon/web-cert.pem -noout -fingerprint -sha256` 查看。“继续当前步骤”要求地图和坐标与断点严格一致；“从头恢复”可从已识别的登录页自动确认服务器最新存档；“强制从头”只跳过会话识别。`8766` 保持只读，两个端口都不得映射到公网。
 
 ## 13. 游戏更新后的修复流程
 
@@ -636,7 +652,7 @@ updated_at
 ## 15. 验证命令
 
 ```bash
-python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
+python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py input_takeover.py resource_catalog.py monitor_server.py
 python3.12 -m unittest discover -s tests -v
 python3.12 procedure_runner.py --list
 python3.12 procedure_runner.py dali_cow --dry-run --startup-delay 0

@@ -22,6 +22,8 @@ const categoryLabels = {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 let toastTimer;
+let refreshTimer;
+let schedulerStopped = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -64,6 +66,20 @@ function statusCell(status) {
   return `<span class="status status-${escapeHtml(status)}">${escapeHtml(stateLabels[status] || status)}</span>`;
 }
 
+function isResumableCheckpoint(checkpoint) {
+  const phases = ["route_start", "before_action", "after_action", "between_routes"];
+  return Boolean(
+    checkpoint.task
+    && checkpoint.route
+    && checkpoint.route_revision
+    && checkpoint.next_action_index
+    && checkpoint.map
+    && Array.isArray(checkpoint.coordinate)
+    && checkpoint.coordinate.length === 2
+    && phases.includes(checkpoint.phase)
+  );
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     headers: {
@@ -78,6 +94,7 @@ async function request(path, options = {}) {
 }
 
 async function refresh() {
+  if (schedulerStopped) return;
   try {
     const [status, events, acquisitions, summary] = await Promise.all([
       request("/api/status"),
@@ -91,6 +108,7 @@ async function refresh() {
     $("#connection-state").textContent = status.scheduler_attached ? "调度器已连接" : "只读监控";
   } catch (error) {
     $("#connection-state").textContent = `连接失败: ${error.message}`;
+    $$('[data-control]').forEach((button) => { button.disabled = true; });
   }
 }
 
@@ -110,7 +128,19 @@ function renderStatus(payload) {
   $("#updated-at").textContent = dateTime(payload.generated_at);
 
   $$("[data-control]").forEach((button) => {
-    button.disabled = !payload.scheduler_attached;
+    const action = button.dataset.control;
+    const hasStep = isResumableCheckpoint(checkpoint);
+    if (!payload.scheduler_attached) {
+      button.disabled = true;
+    } else if (action === "pause") {
+      button.disabled = runtime.paused;
+    } else if (action === "continue") {
+      button.disabled = !runtime.paused || runtime.resume_pending || !hasStep;
+    } else if (["restart", "force-restart"].includes(action)) {
+      button.disabled = !runtime.paused || runtime.resume_pending;
+    } else {
+      button.disabled = false;
+    }
   });
 
   $("#task-rows").innerHTML = payload.tasks.map((task) => `
@@ -158,7 +188,9 @@ function renderCheckpoint(checkpoint) {
     ["坐标", Array.isArray(checkpoint.coordinate) ? `(${checkpoint.coordinate.join(", ")})` : null],
     ["暂停时间", dateTime(checkpoint.paused_at)],
     ["原因", checkpoint.reason],
-    ["恢复策略", "废弃中间动作，从任务第一条路线重跑"]
+    ["恢复选项", isResumableCheckpoint(checkpoint)
+      ? "可校验当前位置后继续当前步骤，或废弃断点从头恢复"
+      : "无可继续步骤；只能从头恢复"]
   ] : [["状态", "无活动断点"]];
   $("#checkpoint-details").innerHTML = fields.map(([label, value]) =>
     `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "-")}</dd>`
@@ -214,21 +246,35 @@ $$('[data-tab]').forEach((button) => {
 
 $$('[data-control]').forEach((button) => {
   button.addEventListener("click", async () => {
-    if (["force-resume", "stop"].includes(button.dataset.control)) {
-      const label = button.dataset.control === "stop"
-        ? "确认安全停止调度器？"
-        : "确认跳过会话识别，但仍从任务开头重跑？";
+    if (["restart", "force-restart", "stop"].includes(button.dataset.control)) {
+      const labels = {
+        restart: "确认废弃中间步骤并从当前任务开头恢复？",
+        "force-restart": "确认跳过会话识别并从任务开头恢复？",
+        stop: "确认停止整个调度器进程？8765 控制服务也会关闭。"
+      };
+      const label = labels[button.dataset.control];
       if (!window.confirm(label)) return;
     }
     button.disabled = true;
     try {
-      await request(`/api/control/${button.dataset.control}`, { method: "POST", body: "{}" });
+      const result = await request(
+        `/api/control/${button.dataset.control}`,
+        { method: "POST", body: "{}" }
+      );
+      if (!result.changed) throw new Error("当前状态不接受这个控制请求");
+      if (button.dataset.control === "stop") {
+        schedulerStopped = true;
+        clearInterval(refreshTimer);
+        $$('[data-control]').forEach((item) => { item.disabled = true; });
+        showToast("调度器正在停止");
+        $("#connection-state").textContent = "进程已停止；8766 只读监控仍可访问";
+        return;
+      }
       showToast("控制请求已提交");
       await refresh();
     } catch (error) {
       showToast(error.message, true);
-    } finally {
-      button.disabled = false;
+      await refresh();
     }
   });
 });
@@ -249,4 +295,4 @@ $("#adjustment-form").addEventListener("submit", async (event) => {
 });
 
 refresh();
-setInterval(refresh, 2000);
+refreshTimer = setInterval(refresh, 2000);

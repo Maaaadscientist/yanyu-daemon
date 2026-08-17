@@ -184,10 +184,37 @@ class MonitorData:
             raise RuntimeError("scheduler is not attached to this read-only monitor")
         if action == "pause":
             changed = self.runtime_control.request_pause(reason="web_manual_pause", source="web")
+        elif action == "continue":
+            changed = self.runtime_control.request_resume(
+                source="web",
+                force=False,
+                mode="continue_step",
+            )
+        elif action == "restart":
+            changed = self.runtime_control.request_resume(
+                source="web",
+                force=False,
+                mode="restart_task",
+            )
+        elif action == "force-restart":
+            changed = self.runtime_control.request_resume(
+                source="web",
+                force=True,
+                mode="restart_task",
+            )
         elif action == "resume":
-            changed = self.runtime_control.request_resume(source="web", force=False)
+            # Compatibility with dashboards deployed before explicit resume modes.
+            changed = self.runtime_control.request_resume(
+                source="web",
+                force=False,
+                mode="restart_task",
+            )
         elif action == "force-resume":
-            changed = self.runtime_control.request_resume(source="web", force=True)
+            changed = self.runtime_control.request_resume(
+                source="web",
+                force=True,
+                mode="restart_task",
+            )
         elif action == "stop":
             if self.stop_callback:
                 self.stop_callback()
@@ -231,6 +258,11 @@ class MonitorData:
             "paused_at": None,
             "active_pause_seconds": 0.0,
             "total_pause_seconds": 0.0,
+            "resume_policy": "read_only",
+            "resume_modes": [],
+            "resume_pending": False,
+            "input_pause_policy": None,
+            "takeover": None,
             "checkpoint": None,
             "context": {"phase": "read_only"},
         }

@@ -16,7 +16,8 @@ For the detailed Chinese gameplay model, verified Dali routes, scheduler timing,
 
 - This project directly moves and clicks your mouse. Use dry-run and step mode before running a new route.
 - `test.py` is the production daily-task runner despite its filename. Do not use it as the automated test suite; isolated tests live under `tests/`.
-- `tracking_click.py` pauses at the next safe action boundary when physical mouse or keyboard input is detected.
+- `tracking_click.py` requires deliberate takeover by default: sustained mouse movement for 2 seconds inside a rolling 3-second window, or the dedicated pause hotkey.
+- The takeover guard does not globally swallow macOS input. It soft-holds automation while the gesture is being evaluated, but emergency keys and remote-desktop control remain available.
 - Keep the game window size stable between capture, coordinate picking, and route execution.
 - macOS must grant Accessibility and Screen Recording permissions to the terminal or Python application that runs these scripts.
 - The scripts assume the target window title or owner contains `烟雨江湖` by default.
@@ -37,7 +38,8 @@ For the detailed Chinese gameplay model, verified Dali routes, scheduler timing,
 - `route_analyzer.py`: analyzes stored routes without opening the game.
 - `pattern_learner.py`: compares per-action screenshots from a route run to flag suspicious actions.
 - `tracking_click.py`: 7x24 scheduler with per-task state, exact resource anchors, retries, and failure captures.
-- `runtime_control.py`: physical-input detection, synthetic-input suppression, persisted checkpoints, and from-the-beginning recovery tickets.
+- `runtime_control.py`: deliberate takeover arbitration, persisted checkpoints, exact-step continuation, and from-the-beginning recovery tickets.
+- `input_takeover.py`: rolling mouse-gesture detector and the click-through translucent desktop status panel.
 - `game_session.py`: login-page recovery, latest-server-save confirmation, remote-logout detection, and `子时` verification.
 - `resource_catalog.py`: refresh policies, legacy action-anchor inference, per-point state, and acquisition ledger.
 - `monitor_server.py` and `web/`: local resource dashboard and scheduler controls.
@@ -474,29 +476,45 @@ Important behavior:
 - A global `<ctrl>+c` hotkey is enabled by default, including when the scheduler runs in a detached `screen` session. It requests a graceful stop, saves every task's current schedule, and writes `scheduler_hotkey_stop_requested` followed by `scheduler_stopped` to the JSONL log.
 - Normal delays, OCR polling, and scheduled refresh waits stop immediately. An in-progress atomic `rapid_clicks` group finishes first so a multi-jump is not abandoned halfway through.
 
-### Human Takeover And Safe Restart
+### Deliberate Human Takeover And Recovery
 
-Physical input monitoring is enabled by default. Synthetic `pyautogui` events are wrapped in an automation-input guard, so the scheduler does not pause itself.
+Physical input monitoring is enabled by default. Synthetic `pyautogui` events are wrapped in an automation-input guard, so the scheduler does not interpret its own movement as human input. The default `gesture` policy then arbitrates real input as follows:
 
-When a real mouse or keyboard event is detected:
+1. A short mouse movement starts a candidate takeover. Before dispatching the next non-atomic action, automation enters a soft hold while the rolling three-second window is evaluated.
+2. A click-through translucent panel at the top of the desktop shows the measured movement time and the immediate pause hotkey. It never takes keyboard focus or accepts clicks.
+3. If active mouse movement does not reach two seconds in that window, the panel closes and automation continues without writing a checkpoint.
+4. If the threshold is reached, the scheduler creates a hard checkpoint before the next safe action boundary. `Ctrl-Alt-P` creates the same hard checkpoint immediately.
+5. Ordinary key presses, clicks, and scrolling no longer pause the scheduler under the default policy. They are still recorded as recent human activity, so they can reject an unsafe resume countdown.
+6. Candidate soft-hold time and hard-pause time are both excluded from movement and point-arrival learning. Game refresh targets still advance on wall-clock time and remain anchored to the real resource click.
+7. Atomic `rapid_clicks` groups finish before any pending pause or process stop is honored, preventing a multi-jump from stopping halfway.
 
-1. The scheduler stops before dispatching the next non-atomic action.
-2. `runtime_control.json` records the task, route number, next action number, action label, pause reason, and pause time.
-3. macOS Vision captures the game map and coordinate when readable. The old route/action remains audit evidence only.
-4. Relative movement/UI delays freeze. Existing resource due times continue to follow wall-clock time because the game refreshes while the scheduler is paused.
-5. Press `Ctrl-Alt-R` or use `安全从头恢复` on the authenticated dashboard. Do not manually reconstruct the old mid-route screen.
-6. If the client is on a login screen, recovery opens account login, submits only the already-saved credentials, closes the update notice, checks the agreement, starts the selected character, and confirms the prompt that force-downloads the newer server save. It never selects a local upload.
-7. The old action checkpoint is marked abandoned. After the quiet countdown, the interrupted task restarts at route 1/action 1. Before any carriage route, a readable map and coordinate are required.
-8. If the carriage destination is the current map and its icon is hidden by the player marker, the runner first travels to neutral Luoyang or Nanyangdu, verifies that landing, and then repeats the complete target route.
+This is scheduler arbitration, not a system-wide input lock. macOS and remote-desktop emergency input remain usable; short physical events can still reach the foreground application. A global event-swallowing tap is deliberately not installed because it could also block the stop and recovery keys needed to regain the machine.
 
-The accumulated pause duration is stored per task and excluded from movement and point-arrival learning. Resource refresh clocks continue during desktop use. Cooldown points already anchored before a pause are skipped on the restarted pass; ready or unknown points are handled normally. If every active resource is ready, recovery drops the interrupted-task priority and starts a normal full queue from its first due task.
+The controls have distinct meanings:
 
-The session watchdog checks for provider login, account login, home, server-download, and remote-login screens every 15 seconds. A match pauses the scheduler and preserves the current task context. The login state machine is idempotent, so a process interruption at an intermediate login page continues by detecting that page rather than replaying earlier clicks.
+| Control | Default hotkey | Result |
+| --- | --- | --- |
+| Interrupt game control | `Ctrl-Alt-P` | Stop at the next safe boundary and persist task, route, action, map, coordinate, reason, and time. |
+| Continue current step | `Ctrl-Alt-R` | Require a resumable phase plus the same readable map and coordinate, then continue at the recorded next action. |
+| Restart current task | `Ctrl-Alt-Shift-R` | Abandon the middle action, recover the game session if needed, and run the task from route 1/action 1. |
+| Stop scheduler process | `Ctrl-C` | Save state and terminate the scheduler and its attached 8765 control service. |
+
+`继续当前步骤` is intentionally strict. The checkpoint must contain an active task, route, route-definition revision, valid next-action index, resumable phase, map, and coordinate. The saved route name/index, action range, action definitions, and referenced named points must still match the current procedure after any script update. A fresh Vision read must also match the saved map and coordinate; the default coordinate tolerance is zero. If the procedure, screen, map, or coordinate changed, the request is rejected and the scheduler stays paused.
+
+`从头恢复` uses the session state machine. If the client is on a login screen, it opens account login, uses only already-saved credentials, closes the update notice, checks the agreement, starts the selected character, and confirms the prompt that downloads the newer server save. It never chooses a local upload. The old checkpoint is retained inside the restart ticket for audit, while the task runs from its first route. Carriage routes still apply the neutral-origin check when the destination icon is hidden by the player marker. If every active resource is ready, recovery returns to the normal full-queue priority order.
+
+`强制从头` skips failed session recognition only; it still restarts from the task beginning. A checkpoint survives a scheduler process restart and remains paused until one of these explicit recovery modes is accepted. The session watchdog independently checks provider login, account login, home, server-download, and remote-login screens every 15 seconds.
 
 Useful options:
 
 ```bash
+python3.12 tracking_click.py --pause-hotkey '<ctrl>+<alt>+p'
 python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
+python3.12 tracking_click.py --restart-hotkey '<ctrl>+<alt>+<shift>+r'
+python3.12 tracking_click.py --takeover-window-seconds 3 --takeover-required-seconds 2
+python3.12 tracking_click.py --takeover-max-gap-seconds 0.30
+python3.12 tracking_click.py --no-takeover-hud
+python3.12 tracking_click.py --input-pause-policy immediate
 python3.12 tracking_click.py --resume-delay-seconds 5
 python3.12 tracking_click.py --no-human-input-pause
 python3.12 tracking_click.py --session-check-seconds 10
@@ -504,7 +522,7 @@ python3.12 tracking_click.py --resource-gate-max-wait-seconds 300
 python3.12 tracking_click.py --no-intermediate-saves
 ```
 
-Normal recovery requires a recognized login page or a readable in-game map/coordinate. `强制从头恢复` skips that recognition only; it still cannot resume a saved middle action. Atomic `rapid_clicks` groups cannot pause halfway; a pending pause is honored immediately after the group finishes.
+Use `--input-pause-policy immediate` only to restore the old behavior where any ordinary physical input creates a hard pause.
 
 ### Resource State And Acquisition Ledger
 
@@ -536,7 +554,7 @@ The scheduler serves the local dashboard by default:
 http://127.0.0.1:8765
 ```
 
-It shows task and resource-point cooldowns, current checkpoint, recent scheduler events, acquisition history, quantity summaries, and pause/resume/stop controls. The JSON endpoints are:
+It shows task and resource-point cooldowns, current checkpoint, recent scheduler events, acquisition history, quantity summaries, and explicit interrupt/continue/restart/process-stop controls. The JSON endpoints are:
 
 ```text
 GET  /api/status
@@ -544,15 +562,16 @@ GET  /api/events?limit=200
 GET  /api/acquisitions?limit=200
 GET  /api/summary
 POST /api/control/pause
-POST /api/control/resume
-POST /api/control/force-resume
+POST /api/control/continue
+POST /api/control/restart
+POST /api/control/force-restart
 POST /api/control/stop
 POST /api/acquisitions/adjust
 ```
 
 Every POST must include `X-Yanyu-Request: dashboard`; authenticated LAN requests must also include HTTP Basic credentials. The bundled dashboard supplies the header automatically.
 
-`POST /api/control/stop` terminates the scheduler process, including its attached 8765 control server. An already-open browser page then reports `Failed to fetch`; the independent 8766 read-only monitor remains available. Restart the attached control service without dispatching overdue game tasks by adding `--start-paused`, then use `安全从头恢复` when ready.
+`POST /api/control/stop` terminates the scheduler process, including its attached 8765 control server. The bundled page stops polling after a successful stop and points to the independent 8766 read-only monitor. A page that was disconnected or left open from an older deployment can still report `Failed to fetch`. Restart the attached control service without dispatching overdue game tasks by adding `--start-paused`, then choose `继续当前步骤` only for a complete matching checkpoint or `从头恢复` for a clean task restart.
 
 ```bash
 python3.12 tracking_click.py --start-paused
@@ -616,16 +635,20 @@ PASSWORD=$(cat "$HOME/.config/yanyu-daemon/web-password")
 # Inspect the checkpoint first. --insecure is only for the locally generated certificate.
 curl --insecure --user "yanyu:$PASSWORD" https://127.0.0.1:8765/api/status
 
-# Safe recovery handles a recognized login screen or any readable in-game location,
-# abandons the old middle action, and restarts from route 1/action 1.
+# Continue only when the saved and current map/coordinate match exactly.
 curl --insecure --user "yanyu:$PASSWORD" \
   -H 'X-Yanyu-Request: dashboard' -X POST \
-  https://127.0.0.1:8765/api/control/resume
+  https://127.0.0.1:8765/api/control/continue
 
-# Force still restarts from the beginning; it only skips session recognition.
+# Recover the session if needed, abandon the middle action, and restart route 1/action 1.
 curl --insecure --user "yanyu:$PASSWORD" \
   -H 'X-Yanyu-Request: dashboard' -X POST \
-  https://127.0.0.1:8765/api/control/force-resume
+  https://127.0.0.1:8765/api/control/restart
+
+# Force still restarts from the beginning; it only skips failed session recognition.
+curl --insecure --user "yanyu:$PASSWORD" \
+  -H 'X-Yanyu-Request: dashboard' -X POST \
+  https://127.0.0.1:8765/api/control/force-restart
 ```
 
 The public `http://192.168.1.3:8766` page remains monitor-only. Do not forward either port from the router or expose the self-signed service to the internet. An SSH tunnel to a loopback-only service remains the preferred option outside the trusted LAN.
@@ -845,7 +868,7 @@ This waits two seconds before clicking `确认`.
 Syntax check:
 
 ```bash
-python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
+python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py input_takeover.py resource_catalog.py monitor_server.py
 ```
 
 Route discovery:

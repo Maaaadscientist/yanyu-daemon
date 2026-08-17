@@ -96,6 +96,53 @@ class FakeWebRuntimeControl:
 
 
 class ResourcesAndMonitorTests(unittest.TestCase):
+    def test_continue_checkpoint_must_match_the_current_task_route(self):
+        task = tracking_click.ScheduledTask("checkpoint", 60, 0, ("save",))
+
+        tracking_click.validate_continue_checkpoint(
+            {
+                "task": "checkpoint",
+                "route": "save",
+                "route_index": 1,
+                "next_action_index": 1,
+                "route_revision": tracking_click.route_revision("save"),
+            },
+            {"checkpoint": task},
+        )
+        with self.assertRaisesRegex(ValueError, "route changed"):
+            tracking_click.validate_continue_checkpoint(
+                {
+                    "task": "checkpoint",
+                    "route": "old_save",
+                    "route_index": 1,
+                    "next_action_index": 1,
+                    "route_revision": tracking_click.route_revision("save"),
+                },
+                {"checkpoint": task},
+            )
+
+    def test_monitor_uses_explicit_continue_and_restart_modes(self):
+        runtime = FakeWebRuntimeControl()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = MonitorData(
+                state_file=root / "state.json",
+                event_file=root / "events.jsonl",
+                resource_history=root / "resources.jsonl",
+                runtime_control=runtime,
+            )
+
+            data.control("continue")
+            data.control("restart")
+
+        self.assertEqual(
+            runtime.resume_requests,
+            [
+                {"source": "web", "force": False, "mode": "continue_step"},
+                {"source": "web", "force": False, "mode": "restart_task"},
+            ],
+        )
+
     def test_carriage_metadata_extracts_destination_and_safe_travel_prefix(self):
         self.assertEqual(tracking_click.legacy_carriage_destination("sleep1"), "乌思雪原")
         self.assertEqual(tracking_click.legacy_carriage_destination("bear5"), "洛阳")
@@ -511,7 +558,7 @@ class ResourcesAndMonitorTests(unittest.TestCase):
                     status = json.loads(response.read())
 
                 untrusted_post = urllib.request.Request(
-                    f"{base_url}/api/control/force-resume",
+                    f"{base_url}/api/control/force-restart",
                     data=b"{}",
                     headers={"Authorization": authorization, "Content-Type": "application/json"},
                     method="POST",
@@ -521,7 +568,7 @@ class ResourcesAndMonitorTests(unittest.TestCase):
                 self.assertEqual(forbidden.exception.code, 403)
 
                 trusted_post = urllib.request.Request(
-                    f"{base_url}/api/control/force-resume",
+                    f"{base_url}/api/control/force-restart",
                     data=b"{}",
                     headers={
                         "Authorization": authorization,
@@ -537,7 +584,10 @@ class ResourcesAndMonitorTests(unittest.TestCase):
 
         self.assertTrue(status["scheduler_attached"])
         self.assertTrue(resumed["ok"])
-        self.assertEqual(runtime.resume_requests, [{"source": "web", "force": True}])
+        self.assertEqual(
+            runtime.resume_requests,
+            [{"source": "web", "force": True, "mode": "restart_task"}],
+        )
 
     def test_lan_scheduler_control_requires_authentication_and_tls(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -629,7 +679,7 @@ class ResourcesAndMonitorTests(unittest.TestCase):
         self.assertIs(context.arguments[0], raw_connection)
         self.assertFalse(context.arguments[1]["do_handshake_on_connect"])
 
-    def test_recovered_task_discards_the_mid_action_checkpoint_and_restarts(self):
+    def test_restart_ticket_discards_the_mid_action_checkpoint_and_restarts(self):
         original_start = datetime.now() - timedelta(minutes=8)
         runtime = FakeRuntimeControl(total_pause_seconds=125)
         task = tracking_click.ScheduledTask("checkpoint_test", 60, 0, ("save",))
@@ -674,12 +724,71 @@ class ResourcesAndMonitorTests(unittest.TestCase):
                 smart_runner=None,
                 args=args,
                 state=state,
-                resume_checkpoint=checkpoint,
+                recovery_ticket={
+                    "task": "checkpoint_test",
+                    "recovery_mode": "restart_task",
+                    "abandoned_checkpoint": checkpoint,
+                },
             )
 
         self.assertGreater(state["checkpoint_test"]["last_started"], original_start)
         self.assertEqual(state["checkpoint_test"]["human_pause_seconds"], 4)
         self.assertEqual(automation.calls[0].get("start_index"), 1)
+
+    def test_continue_ticket_starts_at_the_recorded_action_and_keeps_pause_baseline(self):
+        original_start = datetime.now() - timedelta(minutes=8)
+        runtime = FakeRuntimeControl(total_pause_seconds=125)
+        task = tracking_click.ScheduledTask("checkpoint_test", 60, 0, ("save",))
+        state = {
+            "checkpoint_test": {
+                "next_due": datetime.now(),
+                "last_started": None,
+                "last_completed": None,
+                "last_refresh_anchor": None,
+                "last_status": "running",
+                "failures": 0,
+                "lead_seconds": 0,
+                "lead_samples": 0,
+                "resource_points": {},
+                "human_pause_seconds": 4,
+            }
+        }
+        checkpoint = {
+            "task": "checkpoint_test",
+            "phase": "continue_step",
+            "recovery_mode": "continue_step",
+            "route": "save",
+            "route_index": 1,
+            "next_action_index": 3,
+            "task_started_at": original_start.isoformat(timespec="milliseconds"),
+            "task_pause_baseline": 25,
+            "scheduled_wait_seconds": 7,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(
+                state_file=str(Path(directory, "state.json")),
+                log_jsonl=str(Path(directory, "events.jsonl")),
+                capture="none",
+                capture_dir=str(Path(directory, "captures")),
+                log_actions=False,
+                dry_run=False,
+                completion_padding_seconds=0,
+                retry_minutes=10,
+            )
+            automation = FakeRouteAutomation(datetime.now(), runtime)
+            tracking_click.run_task(
+                task,
+                automation,
+                smart_runner=None,
+                args=args,
+                state=state,
+                resume_checkpoint=checkpoint,
+            )
+
+        expected_start = original_start.replace(microsecond=original_start.microsecond // 1000 * 1000)
+        self.assertEqual(state["checkpoint_test"]["last_started"], expected_start)
+        self.assertEqual(state["checkpoint_test"]["human_pause_seconds"], 104)
+        self.assertEqual(automation.calls[0].get("start_index"), 3)
 
 
 if __name__ == "__main__":

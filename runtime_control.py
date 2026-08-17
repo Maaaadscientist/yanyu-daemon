@@ -7,8 +7,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Mapping
 
+from input_takeover import MouseTakeoverDetector
 
-RUNTIME_CONTROL_SCHEMA_VERSION = 2
+
+RUNTIME_CONTROL_SCHEMA_VERSION = 3
+CONTINUE_STEP = "continue_step"
+RESTART_TASK = "restart_task"
+RESUME_MODES = frozenset({CONTINUE_STEP, RESTART_TASK})
+RESUMABLE_PHASES = frozenset(
+    {
+        "route_start",
+        "before_action",
+        "after_action",
+        "between_routes",
+    }
+)
 
 _MODIFIER_KEY_NAMES = frozenset(
     {
@@ -33,6 +46,14 @@ class ResumeValidationError(RuntimeError):
     pass
 
 
+class AutomationRecoveryHandoff(BaseException):
+    """Leave the interrupted call stack so the scheduler consumes one recovery ticket."""
+
+    def __init__(self, mode: str) -> None:
+        super().__init__(mode)
+        self.mode = mode
+
+
 class RuntimeControl:
     """Coordinate human-input pausing, checkpoints, and safe resumption."""
 
@@ -42,9 +63,17 @@ class RuntimeControl:
         stop_event: threading.Event,
         state_file: str | Path = "runtime_control.json",
         resume_hotkey: str = "<ctrl>+<alt>+r",
+        restart_hotkey: str = "<ctrl>+<alt>+<shift>+r",
+        pause_hotkey: str = "<ctrl>+<alt>+p",
         resume_delay_seconds: float = 3.0,
         coordinate_tolerance: int = 0,
         detect_human_input: bool = True,
+        input_pause_policy: str = "gesture",
+        takeover_window_seconds: float = 3.0,
+        takeover_required_seconds: float = 2.0,
+        takeover_max_gap_seconds: float = 0.30,
+        takeover_min_distance_pixels: float = 1.0,
+        takeover_hud=None,
         synthetic_grace_seconds: float = 0.2,
         event_logger: Callable[[dict], None] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
@@ -52,9 +81,14 @@ class RuntimeControl:
         self.stop_event = stop_event
         self.state_file = Path(state_file)
         self.resume_hotkey = str(resume_hotkey)
+        self.restart_hotkey = str(restart_hotkey)
+        self.pause_hotkey = str(pause_hotkey)
         self.resume_delay_seconds = max(0.0, float(resume_delay_seconds))
         self.coordinate_tolerance = max(0, int(coordinate_tolerance))
         self.detect_human_input = bool(detect_human_input)
+        self.input_pause_policy = str(input_pause_policy)
+        if self.input_pause_policy not in {"gesture", "immediate"}:
+            raise ValueError("input_pause_policy must be 'gesture' or 'immediate'")
         self.synthetic_grace_seconds = max(0.0, float(synthetic_grace_seconds))
         self.event_logger = event_logger
         self._monotonic = monotonic
@@ -66,6 +100,7 @@ class RuntimeControl:
         self._checkpoint: dict | None = None
         self._resume_checkpoint: dict | None = None
         self._resume_request: dict | None = None
+        self._resume_in_progress = False
         self._paused_at: datetime | None = None
         self._pause_reason: str | None = None
         self._pause_source: str | None = None
@@ -74,8 +109,24 @@ class RuntimeControl:
         self._synthetic_depth = 0
         self._ignore_input_until = 0.0
         self._state_provider: Callable[[], object] | None = None
+        self._continue_validator: Callable[[Mapping], None] | None = None
         self._resume_preparer: Callable[..., Mapping | None] | None = None
         self._listeners: list[object] = []
+        self._gesture_detector = MouseTakeoverDetector(
+            window_seconds=takeover_window_seconds,
+            required_seconds=takeover_required_seconds,
+            max_gap_seconds=takeover_max_gap_seconds,
+            min_distance_pixels=takeover_min_distance_pixels,
+        )
+        self._takeover_pending = threading.Event()
+        self._gesture_monitor_stop = threading.Event()
+        self._gesture_monitor_thread: threading.Thread | None = None
+        self._takeover_state_lock = threading.RLock()
+        self._last_takeover_update = float("-inf")
+        self._gesture_announced = False
+        self._takeover_hold_started: float | None = None
+        self._takeover_progress = self._gesture_detector.poll(now=self._monotonic())
+        self._takeover_hud = takeover_hud
         self._load()
 
     @property
@@ -88,10 +139,15 @@ class RuntimeControl:
             total = self._total_pause_seconds
             if self.pause_event.is_set() and self._paused_at:
                 total += max(0.0, (datetime.now() - self._paused_at).total_seconds())
+            if self._takeover_hold_started is not None:
+                total += max(0.0, self._monotonic() - self._takeover_hold_started)
             return total
 
     def set_state_provider(self, provider: Callable[[], object] | None) -> None:
         self._state_provider = provider
+
+    def set_continue_validator(self, validator: Callable[[Mapping], None] | None) -> None:
+        self._continue_validator = validator
 
     def set_resume_preparer(self, preparer: Callable[..., Mapping | None] | None) -> None:
         """Set the preflight used before issuing a from-the-beginning recovery ticket."""
@@ -177,6 +233,7 @@ class RuntimeControl:
             )
             self.pause_event.set()
             self._save_locked()
+        self._clear_takeover(show_paused=source in {"human_input", "hotkey"})
         self._emit(
             {
                 "event": "automation_paused",
@@ -188,9 +245,23 @@ class RuntimeControl:
         print(f"Automation paused ({source}: {reason}).")
         return True
 
-    def request_resume(self, *, source: str = "resume_hotkey", force: bool = False) -> bool:
+    def request_resume(
+        self,
+        *,
+        source: str = "resume_hotkey",
+        force: bool = False,
+        mode: str = CONTINUE_STEP,
+    ) -> bool:
+        mode = RESTART_TASK if force else str(mode)
+        if mode not in RESUME_MODES:
+            raise ValueError(f"unknown resume mode: {mode}")
         with self._lock:
-            if not self.pause_event.is_set() or self.stop_event.is_set():
+            if (
+                not self.pause_event.is_set()
+                or self.stop_event.is_set()
+                or self.resume_requested.is_set()
+                or self._resume_in_progress
+            ):
                 return False
             requested_at = self._monotonic()
             # Ignore the remaining key events from the resume chord itself.
@@ -198,6 +269,7 @@ class RuntimeControl:
             self._resume_request = {
                 "source": str(source),
                 "force": bool(force),
+                "mode": mode,
                 "requested_at": requested_at,
             }
             self.resume_requested.set()
@@ -206,7 +278,7 @@ class RuntimeControl:
                 "event": "automation_resume_requested",
                 "source": source,
                 "force": bool(force),
-                "mode": "restart_task",
+                "mode": mode,
             }
         )
         return True
@@ -239,15 +311,32 @@ class RuntimeControl:
             active_pause = 0.0
             if self.pause_event.is_set() and self._paused_at:
                 active_pause = max(0.0, (datetime.now() - self._paused_at).total_seconds())
+            active_takeover_hold = (
+                max(0.0, self._monotonic() - self._takeover_hold_started)
+                if self._takeover_hold_started is not None
+                else 0.0
+            )
             return {
                 "paused": self.pause_event.is_set(),
                 "reason": self._pause_reason,
                 "source": self._pause_source,
                 "paused_at": self._paused_at.isoformat(timespec="milliseconds") if self._paused_at else None,
                 "active_pause_seconds": round(active_pause, 3),
-                "total_pause_seconds": round(self._total_pause_seconds + active_pause, 3),
+                "total_pause_seconds": round(
+                    self._total_pause_seconds + active_pause + active_takeover_hold,
+                    3,
+                ),
                 "resume_hotkey": self.resume_hotkey,
-                "resume_policy": "restart_task",
+                "restart_hotkey": self.restart_hotkey,
+                "pause_hotkey": self.pause_hotkey,
+                "resume_policy": "explicit_continue_or_restart",
+                "resume_modes": sorted(RESUME_MODES),
+                "input_pause_policy": self.input_pause_policy,
+                "resume_pending": self.resume_requested.is_set() or self._resume_in_progress,
+                "takeover": {
+                    **self._takeover_progress.as_dict(),
+                    "hold_seconds": round(active_takeover_hold, 3),
+                },
                 "checkpoint": copy.deepcopy(self._checkpoint),
                 "context": copy.deepcopy(self._context),
             }
@@ -294,12 +383,14 @@ class RuntimeControl:
             active_wait += max(0.0, self._monotonic() - started)
 
     def wait_if_paused(self) -> float:
+        self._wait_if_takeover_pending()
         if not self.pause_event.is_set():
             self._raise_if_stopped()
             return 0.0
 
         self._capture_checkpoint_state()
         entered = self._monotonic()
+        accepted_mode = None
         while self.pause_event.is_set():
             self._raise_if_stopped()
             if not self.resume_requested.wait(0.1):
@@ -308,13 +399,17 @@ class RuntimeControl:
                 request = dict(self._resume_request or {})
                 self._resume_request = None
                 self.resume_requested.clear()
+                self._resume_in_progress = bool(request)
             if not request:
                 continue
 
             force = bool(request.get("force"))
             source = str(request.get("source", "unknown"))
+            mode = str(request.get("mode", CONTINUE_STEP))
             try:
-                if self._resume_preparer is not None:
+                if mode == CONTINUE_STEP:
+                    current_state = self._validate_resume_state()
+                elif self._resume_preparer is not None:
                     prepared = self._resume_preparer(
                         force=force,
                         checkpoint=self.pending_checkpoint() or {},
@@ -323,8 +418,7 @@ class RuntimeControl:
                 else:
                     current_state = None if force else self._validate_restart_state()
             except Exception as exc:
-                if isinstance(exc, KeyboardInterrupt):
-                    raise
+                self._finish_resume_attempt()
                 print(f"Resume rejected: {exc}")
                 self._emit(
                     {
@@ -341,12 +435,21 @@ class RuntimeControl:
             with self._lock:
                 new_input = self._last_user_input_monotonic > requested_at
             if new_input and not force:
+                self._finish_resume_attempt()
                 message = "human input was detected during the resume countdown"
                 print(f"Resume rejected: {message}.")
                 self._emit({"event": "automation_resume_rejected", "source": source, "reason": message})
                 continue
-            self._finish_resume(source=source, force=force, current_state=current_state)
+            self._finish_resume(
+                source=source,
+                force=force,
+                mode=mode,
+                current_state=current_state,
+            )
+            accepted_mode = mode
 
+        if accepted_mode is not None:
+            raise AutomationRecoveryHandoff(accepted_mode)
         return max(0.0, self._monotonic() - entered)
 
     def start_listeners(self, extra_hotkeys: Mapping[str, Callable[[], object]] | None = None) -> None:
@@ -354,7 +457,22 @@ class RuntimeControl:
             return
         from pynput import keyboard, mouse
 
-        callbacks = {self.resume_hotkey: self.request_resume, **dict(extra_hotkeys or {})}
+        callbacks = {
+            self.resume_hotkey: lambda: self.request_resume(
+                source="resume_hotkey",
+                mode=CONTINUE_STEP,
+            ),
+            self.restart_hotkey: lambda: self.request_resume(
+                source="restart_hotkey",
+                mode=RESTART_TASK,
+            ),
+            self.pause_hotkey: lambda: self.request_pause(
+                reason="pause_hotkey",
+                source="hotkey",
+                details={"hotkey": self.pause_hotkey},
+            ),
+            **dict(extra_hotkeys or {}),
+        }
         hotkeys = [keyboard.HotKey(keyboard.HotKey.parse(keys), callback) for keys, callback in callbacks.items()]
         keyboard_listener = None
 
@@ -384,8 +502,17 @@ class RuntimeControl:
             )
         for listener in self._listeners:
             listener.start()
+        if self.detect_human_input and self.input_pause_policy == "gesture":
+            self._start_gesture_monitor()
+            self._hud_call("start")
 
     def stop_listeners(self) -> None:
+        self._gesture_monitor_stop.set()
+        if self._gesture_monitor_thread and self._gesture_monitor_thread.is_alive():
+            self._gesture_monitor_thread.join(timeout=1.0)
+        self._gesture_monitor_thread = None
+        self._clear_takeover()
+        self._hud_call("stop")
         listeners, self._listeners = self._listeners, []
         for listener in listeners:
             listener.stop()
@@ -396,33 +523,142 @@ class RuntimeControl:
     def _on_key_press(self, key) -> None:
         if str(key) in _MODIFIER_KEY_NAMES:
             return
-        self._handle_physical_input("keyboard", {"key": str(key)})
+        if self.input_pause_policy == "immediate":
+            self._handle_physical_input("keyboard", {"key": str(key)})
+        else:
+            self._note_physical_input()
 
     def _on_mouse_move(self, x, y) -> None:
-        self._handle_physical_input("mouse_move", {"x": int(x), "y": int(y)})
+        details = {"x": int(x), "y": int(y)}
+        if self.input_pause_policy == "immediate":
+            self._handle_physical_input("mouse_move", details)
+            return
+        now = self._monotonic()
+        if not self._note_physical_input(now=now) or self.pause_event.is_set():
+            return
+        progress = self._gesture_detector.feed(x, y, now=now)
+        self._update_takeover(progress)
+        if progress.triggered:
+            self.request_pause(
+                reason="mouse_takeover_gesture",
+                source="human_input",
+                details={**details, **progress.as_dict()},
+            )
 
     def _on_mouse_click(self, x, y, button, pressed) -> None:
         if pressed:
-            self._handle_physical_input(
-                "mouse_click",
-                {"x": int(x), "y": int(y), "button": str(button)},
-            )
+            details = {"x": int(x), "y": int(y), "button": str(button)}
+            if self.input_pause_policy == "immediate":
+                self._handle_physical_input("mouse_click", details)
+            else:
+                self._note_physical_input()
 
     def _on_mouse_scroll(self, x, y, dx, dy) -> None:
-        self._handle_physical_input(
-            "mouse_scroll",
-            {"x": int(x), "y": int(y), "dx": int(dx), "dy": int(dy)},
-        )
+        details = {"x": int(x), "y": int(y), "dx": int(dx), "dy": int(dy)}
+        if self.input_pause_policy == "immediate":
+            self._handle_physical_input("mouse_scroll", details)
+        else:
+            self._note_physical_input()
 
     def _handle_physical_input(self, input_type: str, details: Mapping) -> None:
         now = self._monotonic()
+        if not self._note_physical_input(now=now):
+            return
+        if not self.pause_event.is_set():
+            self.request_pause(reason=input_type, source="human_input", details=details)
+
+    def _note_physical_input(self, *, now: float | None = None) -> bool:
+        now = self._monotonic() if now is None else float(now)
         with self._lock:
             if self._synthetic_depth or now <= self._ignore_input_until:
-                return
+                return False
             self._last_user_input_monotonic = now
-            already_paused = self.pause_event.is_set()
-        if not already_paused:
-            self.request_pause(reason=input_type, source="human_input", details=details)
+        return True
+
+    def _start_gesture_monitor(self) -> None:
+        if self._gesture_monitor_thread and self._gesture_monitor_thread.is_alive():
+            return
+        self._gesture_monitor_stop.clear()
+        self._gesture_monitor_thread = threading.Thread(
+            target=self._gesture_monitor_loop,
+            name="mouse-takeover-monitor",
+            daemon=True,
+        )
+        self._gesture_monitor_thread.start()
+
+    def _gesture_monitor_loop(self) -> None:
+        while not self._gesture_monitor_stop.wait(0.05) and not self.stop_event.is_set():
+            if self.pause_event.is_set():
+                continue
+            progress = self._gesture_detector.poll(now=self._monotonic())
+            self._update_takeover(progress)
+
+    def _update_takeover(self, progress) -> None:
+        with self._takeover_state_lock:
+            if progress.observed_at < self._last_takeover_update:
+                return
+            self._last_takeover_update = progress.observed_at
+            self._takeover_progress = progress
+            if progress.active and not progress.triggered:
+                with self._lock:
+                    if self._takeover_hold_started is None:
+                        self._takeover_hold_started = self._monotonic()
+                self._takeover_pending.set()
+                self._hud_call("show_progress", progress, pause_hotkey=self.pause_hotkey)
+                if not self._gesture_announced:
+                    self._gesture_announced = True
+                    self._emit({"event": "automation_takeover_gesture_started", **progress.as_dict()})
+                return
+            if not progress.active and self._takeover_pending.is_set():
+                hold_seconds = self._finish_takeover_hold()
+                self._takeover_pending.clear()
+                self._hud_call("hide")
+                if self._gesture_announced:
+                    self._emit(
+                        {
+                            "event": "automation_takeover_gesture_cancelled",
+                            "hold_seconds": round(hold_seconds, 3),
+                        }
+                    )
+                self._gesture_announced = False
+
+    def _clear_takeover(self, *, show_paused: bool = False) -> None:
+        with self._takeover_state_lock:
+            self._finish_takeover_hold()
+            self._gesture_detector.reset()
+            self._takeover_progress = self._gesture_detector.poll(now=self._monotonic())
+            self._last_takeover_update = self._takeover_progress.observed_at
+            self._takeover_pending.clear()
+            self._gesture_announced = False
+            if show_paused:
+                self._hud_call("show_paused")
+            else:
+                self._hud_call("hide")
+
+    def _finish_takeover_hold(self) -> float:
+        with self._lock:
+            if self._takeover_hold_started is None:
+                return 0.0
+            duration = max(0.0, self._monotonic() - self._takeover_hold_started)
+            self._takeover_hold_started = None
+            self._total_pause_seconds += duration
+            self._save_locked()
+        return duration
+
+    def _wait_if_takeover_pending(self) -> None:
+        while self._takeover_pending.is_set() and not self.pause_event.is_set():
+            self._raise_if_stopped()
+            if self.stop_event.wait(0.05):
+                self._raise_if_stopped()
+
+    def _hud_call(self, method: str, *args, **kwargs) -> None:
+        hud = self._takeover_hud
+        if hud is None:
+            return
+        try:
+            getattr(hud, method)(*args, **kwargs)
+        except Exception as exc:
+            self._emit({"event": "takeover_hud_failed", "method": method, "error": repr(exc)})
 
     def _capture_checkpoint_state(self) -> None:
         with self._lock:
@@ -439,10 +675,34 @@ class RuntimeControl:
 
     def _validate_resume_state(self) -> dict:
         checkpoint = self.pending_checkpoint() or {}
+        if (
+            not checkpoint.get("task")
+            or not checkpoint.get("route")
+            or checkpoint.get("phase") not in RESUMABLE_PHASES
+        ):
+            raise ResumeValidationError(
+                "the checkpoint has no resumable task step; use restart from the beginning"
+            )
+        try:
+            route_index = int(checkpoint.get("route_index", 0))
+            next_action_index = int(checkpoint.get("next_action_index", 0))
+        except (TypeError, ValueError) as exc:
+            raise ResumeValidationError("the checkpoint action index is invalid") from exc
+        if route_index < 1 or next_action_index < 1:
+            raise ResumeValidationError("the checkpoint action index is invalid")
+        if self._continue_validator is not None:
+            try:
+                self._continue_validator(copy.deepcopy(checkpoint))
+            except ResumeValidationError:
+                raise
+            except Exception as exc:
+                raise ResumeValidationError(str(exc)) from exc
         expected_map = checkpoint.get("map")
         expected_coordinate = self._coordinate(checkpoint.get("coordinate"))
-        if not expected_map and expected_coordinate is None:
-            raise ResumeValidationError("the checkpoint has no readable map or coordinate; use force resume")
+        if not expected_map or expected_coordinate is None:
+            raise ResumeValidationError(
+                "the checkpoint has no readable map and coordinate; use restart from the beginning"
+            )
 
         current = self._read_state()
         current_map = current.get("map")
@@ -495,51 +755,87 @@ class RuntimeControl:
                 self._raise_if_stopped()
             remaining -= max(0.0, self._monotonic() - started)
 
-    def _finish_resume(self, *, source: str, force: bool, current_state: dict | None) -> None:
+    def _finish_resume(
+        self,
+        *,
+        source: str,
+        force: bool,
+        mode: str,
+        current_state: dict | None,
+    ) -> None:
         now = datetime.now()
         with self._lock:
             duration = max(0.0, (now - self._paused_at).total_seconds()) if self._paused_at else 0.0
             self._total_pause_seconds += duration
             abandoned = copy.deepcopy(self._checkpoint) or {}
-            self._resume_checkpoint = {
-                "task": abandoned.get("task"),
-                "phase": "restart_task",
-                "recovery_mode": "restart_task",
-                "route_index": 1,
-                "next_action_index": 1,
-                "requested_at": now.isoformat(timespec="milliseconds"),
-                "source": source,
-                "force": bool(force),
-                "recovery_state": copy.deepcopy(current_state),
-                "abandoned_checkpoint": abandoned,
-            }
+            if mode == CONTINUE_STEP:
+                self._resume_checkpoint = {
+                    **abandoned,
+                    "checkpoint_phase": abandoned.get("phase"),
+                    "phase": CONTINUE_STEP,
+                    "recovery_mode": CONTINUE_STEP,
+                    "requested_at": now.isoformat(timespec="milliseconds"),
+                    "source": source,
+                    "force": False,
+                    "recovery_state": copy.deepcopy(current_state),
+                }
+            else:
+                self._resume_checkpoint = {
+                    "task": abandoned.get("task"),
+                    "phase": RESTART_TASK,
+                    "recovery_mode": RESTART_TASK,
+                    "route_index": 1,
+                    "next_action_index": 1,
+                    "requested_at": now.isoformat(timespec="milliseconds"),
+                    "source": source,
+                    "force": bool(force),
+                    "recovery_state": copy.deepcopy(current_state),
+                    "abandoned_checkpoint": abandoned,
+                }
             self.pause_event.clear()
             self._paused_at = None
             self._pause_reason = None
             self._pause_source = None
             self._checkpoint = None
+            self._resume_request = None
+            self._resume_in_progress = False
+            self.resume_requested.clear()
             self._save_locked()
-        print(f"Automation recovery accepted after {duration:.1f}s pause; task will restart from its beginning.")
-        self._emit(
-            {
-                "event": "automation_checkpoint_abandoned",
-                "source": source,
-                "task": abandoned.get("task"),
-                "route": abandoned.get("route"),
-                "next_action_index": abandoned.get("next_action_index"),
-                "reason": "restart_from_task_beginning",
-            }
-        )
+        self._hud_call("hide")
+        if mode == CONTINUE_STEP:
+            print(
+                f"Automation resumed after {duration:.1f}s pause at "
+                f"route {abandoned.get('route_index')}, action {abandoned.get('next_action_index')}."
+            )
+        else:
+            print(
+                f"Automation recovery accepted after {duration:.1f}s pause; "
+                "task will restart from its beginning."
+            )
+            self._emit(
+                {
+                    "event": "automation_checkpoint_abandoned",
+                    "source": source,
+                    "task": abandoned.get("task"),
+                    "route": abandoned.get("route"),
+                    "next_action_index": abandoned.get("next_action_index"),
+                    "reason": "restart_from_task_beginning",
+                }
+            )
         self._emit(
             {
                 "event": "automation_resumed",
                 "source": source,
                 "force": force,
-                "mode": "restart_task",
+                "mode": mode,
                 "pause_seconds": round(duration, 3),
                 "state": current_state,
             }
         )
+
+    def _finish_resume_attempt(self) -> None:
+        with self._lock:
+            self._resume_in_progress = False
 
     def _raise_if_stopped(self) -> None:
         if self.stop_event.is_set():
