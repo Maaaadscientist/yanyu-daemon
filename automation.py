@@ -1,6 +1,7 @@
 import math
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -46,6 +47,36 @@ class RapidClickResult:
     gaps: tuple[float, ...]
 
 
+@dataclass(frozen=True)
+class ActionDispatch:
+    index: int
+    action_type: str
+    name: str
+    dispatched_at: datetime | None
+    target: ActionTarget
+    paused_seconds: float = 0.0
+
+
+@dataclass(frozen=True)
+class RouteExecutionResult:
+    route_name: str
+    started_at: datetime
+    completed_at: datetime
+    actions_completed: int
+    dispatches: tuple[ActionDispatch, ...]
+    human_pause_seconds: float = 0.0
+
+
+class RouteExecutionError(RuntimeError):
+    def __init__(self, message: str, *, route_name: str, status: Mapping, dispatches: tuple) -> None:
+        super().__init__(message)
+        self.route_name = route_name
+        self.action_index = status.get("index")
+        self.action_type = status.get("type")
+        self.action_label = status.get("name")
+        self.dispatches = dispatches
+
+
 class RapidClickTimingError(RuntimeError):
     pass
 
@@ -71,6 +102,7 @@ class GameAutomation:
         reference_image: str = "game_screenshot.png",
         position_names: Mapping[Point, str] | None = None,
         stop_event: threading.Event | None = None,
+        runtime_control=None,
     ) -> None:
         screen_width, screen_height = pyautogui.size()
         print(f"Screen width: {screen_width}, Screen height: {screen_height}")
@@ -95,6 +127,7 @@ class GameAutomation:
         self.scale_y = window_info.height / image_height
         self.position_names = position_names or {}
         self.stop_event = stop_event
+        self.runtime_control = runtime_control
 
         print(f"Window Position: ({self.window_left}, {self.window_top})")
         print(f"Window Size: {window_info.width}x{window_info.height}")
@@ -102,6 +135,10 @@ class GameAutomation:
 
     def wait_seconds(self, seconds: float) -> None:
         seconds = max(0.0, float(seconds))
+        runtime_control = getattr(self, "runtime_control", None)
+        if runtime_control is not None:
+            runtime_control.wait(seconds)
+            return
         stop_event = getattr(self, "stop_event", None)
         if stop_event is not None:
             if stop_event.wait(seconds):
@@ -144,9 +181,10 @@ class GameAutomation:
         x, y = self.screen_point(point)
         if dry_run:
             return None
-        pyautogui.moveTo(x, y, duration=duration)
-        clicked_at = datetime.now()
-        pyautogui.click()
+        with self._automation_input():
+            pyautogui.moveTo(x, y, duration=duration)
+            clicked_at = datetime.now()
+            pyautogui.click()
         return clicked_at
 
     def drag_reference(
@@ -161,10 +199,11 @@ class GameAutomation:
         end_x, end_y = self.screen_point(end)
         if dry_run:
             return None
-        pyautogui.moveTo(start_x, start_y)
-        self.wait_seconds(0.2)
-        dragged_at = datetime.now()
-        pyautogui.dragTo(end_x, end_y, button="left", duration=duration)
+        with self._automation_input():
+            pyautogui.moveTo(start_x, start_y)
+            self.wait_seconds(0.2)
+            dragged_at = datetime.now()
+            pyautogui.dragTo(end_x, end_y, button="left", duration=duration)
         self.wait_seconds(0.2)
         return dragged_at
 
@@ -200,16 +239,17 @@ class GameAutomation:
         old_pause = pyautogui.PAUSE
         pyautogui.PAUSE = 0
         try:
-            for index, point in enumerate(point_list):
-                if index:
-                    deadline += interval_list[index - 1]
-                    remaining = deadline - time.monotonic()
-                    if remaining > 0:
-                        time.sleep(remaining)
-                x, y = self.screen_point(point)
-                click_times.append(time.monotonic())
-                wall_times.append(datetime.now())
-                pyautogui.click(x=x, y=y)
+            with self._automation_input():
+                for index, point in enumerate(point_list):
+                    if index:
+                        deadline += interval_list[index - 1]
+                        remaining = deadline - time.monotonic()
+                        if remaining > 0:
+                            time.sleep(remaining)
+                    x, y = self.screen_point(point)
+                    click_times.append(time.monotonic())
+                    wall_times.append(datetime.now())
+                    pyautogui.click(x=x, y=y)
         finally:
             pyautogui.PAUSE = old_pause
 
@@ -351,15 +391,63 @@ class GameAutomation:
         action_logger: Callable[[dict], None] | None = None,
         capture_dir: str | None = None,
         capture_each_action: bool = False,
-    ) -> None:
+        start_index: int = 1,
+        route_index: int = 1,
+        total_routes: int = 1,
+        skip_action_indexes: Iterable[int] = (),
+    ) -> RouteExecutionResult:
         action_list = list(actions)
+        skipped_indexes = {int(value) for value in skip_action_indexes}
         route_label = route_name or "route"
+        if start_index < 1 or start_index > len(action_list) + 1:
+            raise ValueError(f"start_index must be between 1 and {len(action_list) + 1}.")
+        started_at = datetime.now()
         route_start = time.monotonic()
+        runtime_control = getattr(self, "runtime_control", None)
+        pause_at_start = runtime_control.total_pause_seconds if runtime_control is not None else 0.0
+        if runtime_control is not None:
+            runtime_control.set_context(
+                route=route_label,
+                route_index=route_index,
+                total_routes=total_routes,
+                next_action_index=start_index,
+                total_actions=len(action_list),
+                phase="route_start",
+            )
         if not dry_run:
+            self.wait_seconds(0.0)
             self.focus_window()
             self.wait_seconds(start_delay)
+        dispatches = []
+        completed = 0
         for index, (target, delay) in enumerate(action_list, start=1):
+            if index < start_index:
+                continue
             status = self.describe_action(route_label, index, len(action_list), target, delay, route_start, dry_run)
+            if runtime_control is not None and not dry_run:
+                runtime_control.before_action(
+                    route=route_label,
+                    route_index=route_index,
+                    total_routes=total_routes,
+                    action_index=index,
+                    total_actions=len(action_list),
+                    action_type=status["type"],
+                    action_label=status["name"],
+                )
+                self.wait_seconds(0.0)
+            if index in skipped_indexes:
+                skipped_status = {**status, "event": "legacy_action_skipped", "reason": "resource_cooldown"}
+                if print_names or dry_run or step:
+                    print(
+                        f"[{route_label} {index:03d}/{len(action_list):03d}] "
+                        f"skip {status['name']} (resource cooldown)"
+                    )
+                if action_logger:
+                    action_logger(skipped_status)
+                if runtime_control is not None and not dry_run:
+                    runtime_control.action_dispatched(index)
+                completed += 1
+                continue
             if print_names or dry_run or step:
                 print(format_status(status))
             if action_logger:
@@ -367,19 +455,71 @@ class GameAutomation:
             if step:
                 input("Press Enter to execute this action...")
 
-            if not dry_run:
-                self.wait_seconds(delay)
-            if is_point(target):
-                self.click_reference(target, dry_run=dry_run)
-            else:
-                start, end = target
-                self.drag_reference(start, end, dry_run=dry_run)
-            if capture_dir and capture_each_action and not dry_run:
-                self.capture_screenshot(capture_dir, f"{safe_name(route_label)}_{index:03d}")
+            try:
+                if not dry_run:
+                    self.wait_seconds(delay)
+                if is_point(target):
+                    dispatched_at = self.click_reference(target, dry_run=dry_run)
+                else:
+                    start, end = target
+                    dispatched_at = self.drag_reference(start, end, dry_run=dry_run)
+                paused_seconds = (
+                    max(0.0, runtime_control.total_pause_seconds - pause_at_start)
+                    if runtime_control is not None
+                    else 0.0
+                )
+                dispatch = ActionDispatch(
+                    index=index,
+                    action_type=status["type"],
+                    name=status["name"],
+                    dispatched_at=dispatched_at,
+                    target=target,
+                    paused_seconds=paused_seconds,
+                )
+                dispatches.append(dispatch)
+                completed += 1
+                if runtime_control is not None and not dry_run:
+                    runtime_control.action_dispatched(index, dispatched_at)
+                if action_logger and dispatched_at:
+                    action_logger(
+                        {
+                            **status,
+                            "event": "legacy_action_dispatched",
+                            "dispatched_at": dispatched_at.isoformat(timespec="milliseconds"),
+                        }
+                    )
+                if capture_dir and capture_each_action and not dry_run:
+                    self.capture_screenshot(capture_dir, f"{safe_name(route_label)}_{index:03d}")
+            except Exception as exc:
+                raise RouteExecutionError(
+                    f"Route '{route_label}' failed at action {index} ({status['name']}): {exc}",
+                    route_name=route_label,
+                    status=status,
+                    dispatches=tuple(dispatches),
+                ) from exc
         if not dry_run:
             self.wait_seconds(end_delay)
         if capture_dir and not capture_each_action and not dry_run:
             self.capture_screenshot(capture_dir, safe_name(route_label))
+        completed_at = datetime.now()
+        return RouteExecutionResult(
+            route_name=route_label,
+            started_at=started_at,
+            completed_at=completed_at,
+            actions_completed=completed,
+            dispatches=tuple(dispatches),
+            human_pause_seconds=(
+                max(0.0, runtime_control.total_pause_seconds - pause_at_start)
+                if runtime_control is not None
+                else 0.0
+            ),
+        )
+
+    def _automation_input(self):
+        runtime_control = getattr(self, "runtime_control", None)
+        if runtime_control is None:
+            return nullcontext()
+        return runtime_control.automation_input()
 
     def describe_action(
         self,

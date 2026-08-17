@@ -35,6 +35,8 @@ class ProcedureExecutionError(ProcedureError):
         action_type: str | None = None,
         action_label: str | None = None,
         scheduled_wait_seconds: float = 0.0,
+        human_pause_seconds: float = 0.0,
+        refresh_anchor_pause_seconds: float = 0.0,
     ) -> None:
         super().__init__(message)
         self.refresh_anchor = refresh_anchor
@@ -42,6 +44,8 @@ class ProcedureExecutionError(ProcedureError):
         self.action_type = action_type
         self.action_label = action_label
         self.scheduled_wait_seconds = scheduled_wait_seconds
+        self.human_pause_seconds = human_pause_seconds
+        self.refresh_anchor_pause_seconds = refresh_anchor_pause_seconds
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,9 @@ class ProcedureResult:
     refresh_anchor: datetime | None
     actions_completed: int
     scheduled_wait_seconds: float = 0.0
+    human_pause_seconds: float = 0.0
+    refresh_anchor_pause_seconds: float = 0.0
+    refresh_anchors: tuple[dict, ...] = ()
 
 
 def parse_game_state(observations: Sequence[TextObservation]) -> GameState:
@@ -123,6 +130,7 @@ class VisionGameStateReader:
         self.automation = automation
         self.languages = tuple(languages)
         self.stop_event = getattr(automation, "stop_event", None)
+        self.runtime_control = getattr(automation, "runtime_control", None)
         self._request_class = None
         self._handler_class = None
 
@@ -193,10 +201,11 @@ class VisionGameStateReader:
         on_sample: Callable[[GameState], None] | None = None,
     ) -> tuple[GameState, float]:
         started = time.monotonic()
+        pause_at_start = self._pause_seconds()
         consecutive = 0
         last_state = GameState(None, None)
         seen = []
-        while time.monotonic() - started <= timeout:
+        while self._active_elapsed(started, pause_at_start) <= timeout:
             try:
                 last_state = self.read_state()
             except StateReadError:
@@ -210,7 +219,7 @@ class VisionGameStateReader:
             if state_matches(last_state, expected):
                 consecutive += 1
                 if consecutive >= stable_samples:
-                    return last_state, time.monotonic() - started
+                    return last_state, self._active_elapsed(started, pause_at_start)
             else:
                 consecutive = 0
             self._wait_seconds(poll_seconds)
@@ -242,9 +251,10 @@ class VisionGameStateReader:
         poll_seconds: float = 0.15,
     ) -> tuple[TextObservation | None, float]:
         started = time.monotonic()
+        pause_at_start = self._pause_seconds()
         consecutive = 0
         last_observation = None
-        while time.monotonic() - started <= timeout:
+        while self._active_elapsed(started, pause_at_start) <= timeout:
             try:
                 observations = self.observations()
             except StateReadError:
@@ -264,13 +274,21 @@ class VisionGameStateReader:
             if found == present:
                 consecutive += 1
                 if consecutive >= stable_samples:
-                    return last_observation, time.monotonic() - started
+                    return last_observation, self._active_elapsed(started, pause_at_start)
             else:
                 consecutive = 0
             self._wait_seconds(poll_seconds)
 
         expectation = "appear" if present else "disappear"
         raise StateTimeout(f"Timed out after {timeout:.1f}s waiting for text '{text}' to {expectation}.")
+
+    def _pause_seconds(self) -> float:
+        runtime_control = getattr(self, "runtime_control", None)
+        return runtime_control.total_pause_seconds if runtime_control is not None else 0.0
+
+    def _active_elapsed(self, started: float, pause_at_start: float) -> float:
+        paused = max(0.0, self._pause_seconds() - pause_at_start)
+        return max(0.0, time.monotonic() - started - paused)
 
 
 class TimingStore:
@@ -331,23 +349,56 @@ class SmartProcedureRunner:
         action_logger: Callable[[dict], None] | None = None,
         not_before: datetime | None = None,
         step: bool = False,
+        start_index: int = 1,
+        route_index: int = 1,
+        total_routes: int = 1,
     ) -> ProcedureResult:
         validate_procedure(procedure, require_actions=True)
         name = str(procedure["name"])
+        actions = procedure["actions"]
+        if start_index < 1 or start_index > len(actions) + 1:
+            raise ProcedureError(f"start_index must be between 1 and {len(actions) + 1}.")
         started_at = datetime.now()
         refresh_anchor = None
         scheduled_wait_seconds = 0.0
+        refresh_anchor_pause_seconds = 0.0
+        actions_completed = 0
+        refresh_anchors = []
         current_index = None
         current_action = None
+        runtime_control = getattr(self.automation, "runtime_control", None)
+        pause_at_start = runtime_control.total_pause_seconds if runtime_control is not None else 0.0
 
         try:
+            if runtime_control is not None and not dry_run:
+                runtime_control.set_context(
+                    route=name,
+                    route_index=route_index,
+                    total_routes=total_routes,
+                    next_action_index=start_index,
+                    total_actions=len(actions),
+                    phase="route_start",
+                )
+                runtime_control.wait_if_paused()
             if not dry_run and hasattr(self.automation, "focus_window"):
                 self.automation.focus_window()
-            for index, action in enumerate(procedure["actions"], start=1):
-                self._wait_seconds(0.0)
+            for index, action in enumerate(actions, start=1):
+                if index < start_index:
+                    continue
                 current_index = index
                 current_action = action
                 timing_key = action_timing_key(action)
+                if runtime_control is not None and not dry_run:
+                    runtime_control.before_action(
+                        route=name,
+                        route_index=route_index,
+                        total_routes=total_routes,
+                        action_index=index,
+                        total_actions=len(actions),
+                        action_type=str(action["type"]),
+                        action_label=action.get("label"),
+                    )
+                self._wait_seconds(0.0)
                 before_delay = max(0.0, float(action.get("before_delay", 0.0)))
                 if before_delay and not dry_run:
                     self._wait_seconds(before_delay)
@@ -355,12 +406,13 @@ class SmartProcedureRunner:
                     "event": "smart_action",
                     "procedure": name,
                     "index": index,
-                    "total": len(procedure["actions"]),
+                    "total": len(actions),
                     "type": action["type"],
                     "label": action.get("label"),
                     "segment": action.get("segment"),
                     "timing_key": timing_key,
                     "wait_until_scheduled": bool(action.get("wait_until_scheduled")),
+                    "refresh_anchor": bool(action.get("refresh_anchor")),
                     "dry_run": dry_run,
                 }
                 print(format_smart_action(status, action))
@@ -369,13 +421,19 @@ class SmartProcedureRunner:
                 if step:
                     input("Press Enter to execute this smart action...")
                 if dry_run:
+                    actions_completed += 1
                     continue
                 if not_before and action.get("wait_until_scheduled"):
-                    waited = sleep_until_datetime(
-                        not_before,
-                        stop_event=getattr(self.automation, "stop_event", None),
-                    )
+                    if runtime_control is not None:
+                        waited = runtime_control.wait_until(not_before)
+                    else:
+                        waited = sleep_until_datetime(
+                            not_before,
+                            stop_event=getattr(self.automation, "stop_event", None),
+                        )
                     scheduled_wait_seconds += waited
+                    if runtime_control is not None:
+                        runtime_control.set_context(scheduled_wait_seconds=scheduled_wait_seconds)
                     gate_status = {
                         **status,
                         "event": "smart_scheduled_gate_reached",
@@ -394,8 +452,22 @@ class SmartProcedureRunner:
                 for attempt in range(1, attempts + 1):
                     self._last_action_details = {}
                     clicked_at = self._perform(action)
+                    if runtime_control is not None:
+                        runtime_control.action_dispatched(index, clicked_at)
                     if action.get("refresh_anchor") and clicked_at:
                         refresh_anchor = clicked_at
+                        refresh_anchor_pause_seconds = max(
+                            0.0,
+                            runtime_control.total_pause_seconds - pause_at_start,
+                        ) if runtime_control is not None else 0.0
+                        refresh_anchors.append(
+                            {
+                                "action_index": index,
+                                "label": action.get("label"),
+                                "dispatched_at": clicked_at,
+                                "paused_seconds": refresh_anchor_pause_seconds,
+                            }
+                        )
                     if action_logger and (clicked_at or self._last_action_details):
                         action_logger(
                             {
@@ -440,6 +512,7 @@ class SmartProcedureRunner:
                         if attempt >= attempts or action.get("refresh_anchor"):
                             raise
                         print(f"  retry {attempt}/{attempts - 1}: expected state not reached")
+                actions_completed += 1
         except Exception as exc:
             if isinstance(exc, ProcedureExecutionError):
                 raise
@@ -456,6 +529,12 @@ class SmartProcedureRunner:
                 action_type=current_action.get("type") if current_action else None,
                 action_label=current_action.get("label") if current_action else None,
                 scheduled_wait_seconds=scheduled_wait_seconds,
+                human_pause_seconds=(
+                    max(0.0, runtime_control.total_pause_seconds - pause_at_start)
+                    if runtime_control is not None
+                    else 0.0
+                ),
+                refresh_anchor_pause_seconds=refresh_anchor_pause_seconds,
             ) from exc
         finally:
             self.timings.save()
@@ -466,8 +545,15 @@ class SmartProcedureRunner:
             started_at,
             completed_at,
             refresh_anchor,
-            len(procedure["actions"]),
+            actions_completed,
             scheduled_wait_seconds,
+            (
+                max(0.0, runtime_control.total_pause_seconds - pause_at_start)
+                if runtime_control is not None
+                else 0.0
+            ),
+            refresh_anchor_pause_seconds,
+            tuple(refresh_anchors),
         )
 
     def _perform(self, action: Mapping) -> datetime | None:

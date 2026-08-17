@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>烟雨江湖资源调度</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <h1>烟雨江湖资源调度</h1>
+      <p id="connection-state">连接中</p>
+    </div>
+    <div class="control-bar" aria-label="调度控制">
+      <button type="button" data-control="pause">暂停</button>
+      <button type="button" data-control="resume">校验恢复</button>
+      <button type="button" class="warning" data-control="force-resume">强制恢复</button>
+      <button type="button" class="danger" data-control="stop">安全停止</button>
+    </div>
+  </header>
+
+  <section class="runtime-band" aria-live="polite">
+    <div><span>运行状态</span><strong id="runtime-state">未知</strong></div>
+    <div><span>当前任务</span><strong id="current-task">-</strong></div>
+    <div><span>当前步骤</span><strong id="current-step">-</strong></div>
+    <div><span>累计暂停</span><strong id="pause-total">0 秒</strong></div>
+    <div><span>待采资源</span><strong id="ready-count">0</strong></div>
+    <div><span>失败任务</span><strong id="failed-count">0</strong></div>
+  </section>
+
+  <nav class="tabs" aria-label="监控视图">
+    <button type="button" class="active" data-tab="resources">资源状态</button>
+    <button type="button" data-tab="events">操作日志</button>
+    <button type="button" data-tab="acquisitions">采集台账</button>
+  </nav>
+
+  <main>
+    <section id="tab-resources" class="tab-panel active">
+      <div class="section-heading">
+        <h2>任务刷新状态</h2>
+        <time id="updated-at">-</time>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>任务</th><th>类型</th><th>状态</th><th>间隔</th><th>剩余</th><th>下次刷新</th><th>锚点</th><th>失败</th></tr></thead>
+          <tbody id="task-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="checkpoint-layout">
+        <div>
+          <div class="section-heading"><h2>暂停断点</h2></div>
+          <dl id="checkpoint-details" class="checkpoint-details"></dl>
+        </div>
+        <img src="/assets/world_map_reference.jpg" alt="世界地图参考图" class="map-reference">
+      </div>
+
+      <div class="section-heading"><h2>资源点</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>资源点</th><th>任务</th><th>类型</th><th>状态</th><th>剩余</th><th>刷新锚点</th><th>样本</th></tr></thead>
+          <tbody id="point-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-events" class="tab-panel">
+      <div class="section-heading"><h2>最近操作</h2></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>时间</th><th>事件</th><th>任务</th><th>路线/步骤</th><th>结果</th></tr></thead>
+          <tbody id="event-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-acquisitions" class="tab-panel">
+      <div class="ledger-layout">
+        <div>
+          <div class="section-heading"><h2>采集记录</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>任务</th><th>资源点</th><th>数量</th><th>来源</th><th>下次刷新</th></tr></thead>
+              <tbody id="acquisition-rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <aside>
+          <h2>数量汇总</h2>
+          <div id="summary-list" class="summary-list"></div>
+          <form id="adjustment-form">
+            <h2>手工调整</h2>
+            <label>任务<input name="task" required maxlength="100"></label>
+            <label>分类<input name="category" value="other" maxlength="100"></label>
+            <label>数量<input name="quantity" type="number" step="0.01" required></label>
+            <label>单位<input name="unit" value="次" maxlength="20"></label>
+            <label>备注<input name="note" maxlength="500"></label>
+            <button type="submit">记入台账</button>
+          </form>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/static/dashboard.js" defer></script>
+</body>
+</html>

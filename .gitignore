@@ -11,6 +11,9 @@ scheduler_events.jsonl
 scheduler_captures/
 runtime_profiles.json
 runtime_profiles.json.tmp
+runtime_control.json
+runtime_control.json.tmp
+resource_history.jsonl
 screenshot_high_res_*.png
 runs/
 recordings/

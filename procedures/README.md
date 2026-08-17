@@ -11,7 +11,7 @@ Do not enable a procedure until it has:
 
 - at least one coordinate-verified movement action;
 - an exact `refresh_anchor` on the kill/harvest click;
-- a successful run from its declared/required start context through `procedure_runner.py` or `test.py`.
+- a successful run from its declared/required start context through `procedure_runner.py` or the production daily runner. Repository tests live under `tests/`; `test.py` is not the test suite despite its historical name.
 
 Reusable route fragments are regular JSON files with `"library": true` and
 `"enabled": false`. Include one from another procedure with:

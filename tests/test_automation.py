@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image
 
 import automation
-from automation import GameAutomation, RapidClickTimingError, get_window_info
+from automation import GameAutomation, RapidClickTimingError, RouteExecutionError, get_window_info
 
 
 class AutomationTests(unittest.TestCase):
@@ -178,6 +178,22 @@ class AutomationTests(unittest.TestCase):
         self.assertAlmostEqual(result.point[0], 180, delta=2)
         self.assertAlmostEqual(result.point[1], 138, delta=2)
         self.assertGreater(result.inlier_ratio, 0.8)
+
+    def test_legacy_route_failure_reports_the_exact_action(self):
+        instance = self.make_automation()
+        instance.position_names = {(10, 20): "broken point"}
+        instance.runtime_control = None
+        instance.focus_window = lambda: True
+        instance.wait_seconds = lambda _seconds: None
+        instance.click_reference = lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
+
+        with self.assertRaises(RouteExecutionError) as raised:
+            instance.run_actions([((10, 20), 0.5)], route_name="broken_route")
+
+        self.assertEqual(raised.exception.route_name, "broken_route")
+        self.assertEqual(raised.exception.action_index, 1)
+        self.assertEqual(raised.exception.action_type, "click")
+        self.assertEqual(raised.exception.action_label, "broken point")
 
 
 if __name__ == "__main__":

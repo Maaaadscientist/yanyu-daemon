@@ -15,6 +15,8 @@ For the detailed Chinese gameplay model, verified Dali routes, scheduler timing,
 ## Safety And Assumptions
 
 - This project directly moves and clicks your mouse. Use dry-run and step mode before running a new route.
+- `test.py` is the production daily-task runner despite its filename. Do not use it as the automated test suite; isolated tests live under `tests/`.
+- `tracking_click.py` pauses at the next safe action boundary when physical mouse or keyboard input is detected.
 - Keep the game window size stable between capture, coordinate picking, and route execution.
 - macOS must grant Accessibility and Screen Recording permissions to the terminal or Python application that runs these scripts.
 - The scripts assume the target window title or owner contains `烟雨江湖` by default.
@@ -35,6 +37,9 @@ For the detailed Chinese gameplay model, verified Dali routes, scheduler timing,
 - `route_analyzer.py`: analyzes stored routes without opening the game.
 - `pattern_learner.py`: compares per-action screenshots from a route run to flag suspicious actions.
 - `tracking_click.py`: 7x24 scheduler with per-task state, exact resource anchors, retries, and failure captures.
+- `runtime_control.py`: physical-input detection, synthetic-input suppression, persisted checkpoints, and validated resume.
+- `resource_catalog.py`: refresh policies, legacy action-anchor inference, per-point state, and acquisition ledger.
+- `monitor_server.py` and `web/`: local resource dashboard and scheduler controls.
 - `GAMEPLAY_AUTOMATION.md`: detailed Chinese manual and the game-action model derived from the recorded routes.
 - `smarter_click.py`: scheduled runner without persisted recovery.
 - `autosave.py`, `click.py`, `single_run.py`: older/specialized runners kept for reference.
@@ -55,10 +60,12 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-Verify imports and route discovery:
+Verify imports and route discovery without invoking the production daily runner:
 
 ```bash
-python3.12 test.py --list
+python3.12 -m unittest discover -s tests -v
+python3.12 route_analyzer.py pig1 cow2
+python3.12 procedure_runner.py --list
 ```
 
 ## macOS Permissions
@@ -226,7 +233,9 @@ python3.12 test.py save --startup-delay 1
 
 ## Main Runner Options
 
-`test.py` supports:
+`test.py` is the production daily runner. Its name is historical; the commands below can perform real game actions unless `--dry-run` is present.
+
+It supports:
 
 ```bash
 python3.12 test.py --list
@@ -440,12 +449,15 @@ Important behavior:
 
 - Each scheduled task is now a route-level job such as `cow2`, `xigua`, `pingguo`, or `suancai`.
 - Group names such as `1_hour`, `2_hour`, `3_hour`, `5_hour`, `6_hour`, and `daily` still work as command shortcuts.
-- After a route-level task succeeds, its next due time is calculated from actual completion time, not from the originally planned start time.
-- This matches game resources that refresh a fixed time after the successful harvest/kill click.
+- Pig/cow/sheep refresh timing starts at the exact slaughter click. Bear timing starts at the confirmation that begins auto-battle. Fruit, shrimp, and other collection routes retain their configured intervals and start at the first resource confirmation click.
+- Legacy tuple routes infer this exact action from the stable `边栏 -> 空白 -> 确认` interaction shape. Repeated dialog confirmations are not counted as additional refresh anchors.
+- Pen animals (`pig1`, `pig2`, `dali_pig`, and `dali_cow`) use 60 minutes. Sai Bei, Tianshan, Sunset Ranch, and the other ranch routes (`bear7`, `bear14`, `cow1`, and `cow2`) use 180 minutes.
+- Multi-point routes persist one timer per resource point. The complete route becomes due when the latest point is ready, so an early point is not used to start the route before the final point refreshes.
+- Routes without a proven action anchor, currently home maintenance and the Tianshan transfer route, retain the conservative task-completion fallback.
 - If a task crashes, it is marked `failed`, a failure event is logged, a screenshot is captured, and the task retries after 10 minutes.
 - Failed completion does not shift the long refresh anchor.
 - Installed smart procedures are discovered from `procedures/*.json` and appear in the `smart` group.
-- A smart task calculates `next_due` from its `F7`-marked click with millisecond precision. Legacy tasks still fall back to route completion time.
+- A smart task calculates `next_due` from its `F7`-marked click with millisecond precision. Supported legacy resource tasks now use inferred action anchors with the same precision.
 - `--dry-run` never changes `next_due`.
 - Verified movement timing is learned in `runtime_profiles.json`; failures report expected, last, and recently seen coordinates.
 - If a later save/cleanup action fails after the marked resource click, the task is recorded as `post_anchor_failed` and keeps the full refresh interval instead of retrying the kill after ten minutes.
@@ -456,6 +468,82 @@ Important behavior:
 - Failure events include the smart action index, type, and label so one broken segment can be re-recorded.
 - A global `<ctrl>+c` hotkey is enabled by default, including when the scheduler runs in a detached `screen` session. It requests a graceful stop, saves every task's current schedule, and writes `scheduler_hotkey_stop_requested` followed by `scheduler_stopped` to the JSONL log.
 - Normal delays, OCR polling, and scheduled refresh waits stop immediately. An in-progress atomic `rapid_clicks` group finishes first so a multi-jump is not abandoned halfway through.
+
+### Human Takeover And Checkpoint Resume
+
+Physical input monitoring is enabled by default. Synthetic `pyautogui` events are wrapped in an automation-input guard, so the scheduler does not pause itself.
+
+When a real mouse or keyboard event is detected:
+
+1. The scheduler stops before dispatching the next non-atomic action.
+2. `runtime_control.json` records the task, route number, next action number, action label, pause reason, and pause time.
+3. macOS Vision captures the game map and coordinate from the game window into the checkpoint.
+4. Relative movement/UI delays freeze. Existing resource due times continue to follow wall-clock time because the game refreshes while the scheduler is paused.
+5. Return the character to the recorded map and exact coordinate, then press `Ctrl-Alt-R`.
+6. The state is read again. A mismatch keeps the scheduler paused; a match starts a three-second quiet countdown and resumes from the recorded action.
+
+The accumulated pause duration is stored per task and excluded from movement/lead-time learning. If a resource becomes ready during a long pause, it is immediately eligible after a valid resume; its game refresh clock is not shifted by desktop usage.
+
+Useful options:
+
+```bash
+python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
+python3.12 tracking_click.py --resume-delay-seconds 5
+python3.12 tracking_click.py --resume-coordinate-tolerance 1
+python3.12 tracking_click.py --no-human-input-pause
+```
+
+Normal resume deliberately rejects an unreadable or mismatched checkpoint. Use the dashboard's `强制恢复` only after manually verifying the game state. Atomic `rapid_clicks` groups cannot pause halfway; a pending pause is honored immediately after the group finishes.
+
+### Resource State And Acquisition Ledger
+
+`scheduler_state.json` now includes:
+
+- `interval_minutes`, `resource_category`, and `resource_name`;
+- `human_pause_seconds` accumulated while that task was active;
+- `resource_points`, with one `last_refresh_anchor` and `next_due` per animal or collection point;
+- `partial_failed` when a multi-point route fails before every expected anchor is reached.
+
+Every exact anchor appends a `resource_acquired` event to `resource_history.jsonl` immediately. Quantities are acquisition-event estimates, not OCR-confirmed inventory counts. Manual positive or negative adjustments can be added from the dashboard and remain distinguishable from estimated records.
+
+On first startup, old state is migrated without deleting history. In particular, an old three-hour `dali_cow` target is recomputed as one hour from its last exact slaughter anchor.
+
+### Web Monitor
+
+The scheduler serves the local dashboard by default:
+
+```text
+http://127.0.0.1:8765
+```
+
+It shows task and resource-point cooldowns, current checkpoint, recent scheduler events, acquisition history, quantity summaries, and pause/resume/stop controls. The JSON endpoints are:
+
+```text
+GET  /api/status
+GET  /api/events?limit=200
+GET  /api/acquisitions?limit=200
+GET  /api/summary
+POST /api/control/pause
+POST /api/control/resume
+POST /api/control/force-resume
+POST /api/control/stop
+POST /api/acquisitions/adjust
+```
+
+Start a monitor-only process without opening or controlling the game:
+
+```bash
+python3.12 monitor_server.py --host 127.0.0.1 --port 8765
+```
+
+Monitor-only mode is read-only except for acquisition adjustments. Scheduler controls return an error until the dashboard is hosted by `tracking_click.py`. Keep the default loopback host; the control API has no remote-user authentication and should not be exposed directly to a network.
+
+Change the integrated address or disable the service:
+
+```bash
+python3.12 tracking_click.py --web-port 8877
+python3.12 tracking_click.py --no-web
+```
 
 Change or disable the global stop hotkey:
 
@@ -528,16 +616,17 @@ The following workflow is retained for old tuple routes. For an installed smart 
 
 When a game update breaks one legacy route:
 
-1. Stop the scheduler with the global `Ctrl-C` hotkey and confirm a `scheduler_stopped` event was written.
-2. Run only the failed task in dry-run or route-capture mode:
+1. Pause from the dashboard or stop with the global `Ctrl-C` hotkey. Use `--skip-task` for that task while leaving unrelated resources scheduled.
+2. Inspect the failed action, current checkpoint, JSONL event, and failure screenshot:
 
 ```bash
-python3.12 tracking_click.py --run-now cow2 --dry-run
-python3.12 tracking_click.py --run-now cow2 --capture route
+python3.12 monitor_server.py
+python3.12 recording_analyzer.py procedures/cow2.json
+python3.12 route_analyzer.py cow2
 ```
 
-3. Identify the failed route from `scheduler_events.jsonl` and screenshots in `scheduler_captures/`.
-4. Re-record just that route manually:
+3. For a smart procedure, record the broken segment with the same procedure name and `--smart --install`; the timestamped raw evidence remains under `recordings/` while the installed JSON is replaced.
+4. For a legacy tuple route, re-record only that route:
 
 ```bash
 python3.12 control_recorder.py --name cow2_new
@@ -546,14 +635,16 @@ python3.12 recording_analyzer.py recordings/cow2_new_YYYYMMDD_HHMMSS.jsonl
 
 5. Copy the generated route snippet into `coordinates.py`.
 6. Replace the old route name in `TASKS` inside `tracking_click.py`, for example replacing the `cow2` task routes with `("sleep1", "cow2_new", "save")`.
-7. Validate it:
+7. Run isolated static and unit checks before any live game execution:
 
 ```bash
-python3.12 test.py cow2_new --dry-run
-python3.12 tracking_click.py --run-now cow2 --only-task cow2
+python3.12 route_analyzer.py cow2_new
+python3.12 -m unittest discover -s tests -v
 ```
 
-If the task was due while you were fixing it, edit `scheduler_state.json` or delete it to recalculate initial due times.
+8. When the resource is available and the character is in a known state, perform one explicit live run of only that task, then remove `--skip-task`.
+
+Do not delete `scheduler_state.json` during a repair. It contains exact per-point refresh anchors. A failed task retains its prior timers and is visible as `failed`, `partial_failed`, or `post_anchor_failed` in the dashboard.
 
 `smarter_click.py` uses an in-memory schedule:
 
@@ -561,7 +652,7 @@ If the task was due while you were fixing it, edit `scheduler_state.json` or del
 python3.12 smarter_click.py
 ```
 
-For most manual route development, use `test.py`. Use scheduled runners only after the individual routes are stable.
+For route development, use `control_recorder.py`, `recording_analyzer.py`, `route_analyzer.py`, and the `tests/` suite first. Treat `test.py` as a production daily-task entry point, not as the repository's test command.
 
 ## Data Files And Git Hygiene
 
@@ -638,7 +729,7 @@ Then re-check coordinates with:
 
 ```bash
 python3.12 get_coordinates.py --name test_point
-python3.12 test.py --dry-run
+python3.12 route_analyzer.py affected_route
 ```
 
 Also confirm the game window size did not change after coordinate capture.
@@ -662,17 +753,19 @@ This waits two seconds before clicking `确认`.
 Syntax check:
 
 ```bash
-python3.12 -m py_compile *.py
+python3.12 -m py_compile automation.py smart_automation.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
 ```
 
 Route discovery:
 
 ```bash
-python3.12 test.py --list
+python3.12 procedure_runner.py --list
+python3.12 tracking_click.py --list
 ```
 
-Default route estimate:
+Route estimates and isolated tests:
 
 ```bash
-python3.12 test.py --analyze
+python3.12 route_analyzer.py pig1 cow2 bear14
+python3.12 -m unittest discover -s tests -v
 ```

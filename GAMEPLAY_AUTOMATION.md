@@ -193,7 +193,7 @@ Vision 偶尔会把 `(29,6)` 识别成 `（29.6）`。解析器现在接受中�
 1. 到预计刷新时刻后，精确识别 `牛`。
 2. 点击 OCR 识别到的牛行。
 3. 等待 `宰杀` 按钮出现。
-4. 点击 `宰杀`，立刻记录 180 分钟刷新锚点。
+4. 点击 `宰杀`，立刻记录 60 分钟刷新锚点。大理牛属于牛棚圈养动物，不使用牧场的 180 分钟规则。
 5. 连续两个 OCR 样本确认 `牛` 条目消失。
 
 现场确认 `宰杀` 本身就是刷新动作，没有第二个确认框。
@@ -393,7 +393,7 @@ JSON 支持：
 5. 从该点击时间计算下一次 `next_due`。
 6. 扣除提前到达后的空等时间，学习真实“出发到刷新动作”耗时，并保留 `2s` 余量。
 
-通过 `test.py` 或 `procedure_runner.py` 独立完成的真实智能流程也会把精确锚点同步到 `scheduler_state.json`，避免手工测试刚宰杀完，守护进程又把它当成新任务。dry-run、失败和无刷新锚点流程不会同步；特殊情况下可用 `--no-sync-scheduler` 禁用。
+通过生产日常入口 `test.py` 或单流程入口 `procedure_runner.py` 独立完成的真实智能流程也会把精确锚点同步到 `scheduler_state.json`，避免手工执行刚宰杀完，守护进程又把它当成新任务。dry-run、失败和无刷新锚点流程不会同步；特殊情况下可用 `--no-sync-scheduler` 禁用。仓库自动测试只使用 `tests/`，不会执行 `test.py`。
 
 如果启动时同时存在大量历史过期任务，优先级依次为：已进入提前出发窗口且目标时刻尚未到的精确任务、已经错过目标的精确任务、旧像素任务。每一类内部再按最早目标排序。这样守护进程离线数小时后恢复时，不会为了清理旧路线积压而继续错过每小时资源。
 
@@ -432,6 +432,86 @@ python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
 python3.12 tracking_click.py --no-stop-hotkey
 ```
 
+### 12.2 人工输入暂停与断点恢复
+
+当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。调度器采用“检测到人工输入就让权”的方式处理：
+
+1. `pynput` 全局监听物理鼠标移动、点击、滚轮和键盘按下。
+2. `pyautogui` 的移动、点击和拖动被包在 `automation_input()` 保护区内，并带短暂事件回传宽限期，不会把脚本自己的事件判成人工输入。
+3. 人工事件把 `pause_event` 置位；普通动作在下一个动作边界停住，尚未完成的相对 delay 保留剩余时间。
+4. 多段轻功 `rapid_clicks` 是原子动作，不在组内暂停。连点完成后立即响应暂停或停止，避免只跳一半。
+5. `runtime_control.json` 立即保存任务、路线序号、下一动作序号、动作标签、阶段、暂停原因和时间。
+6. 工作线程再用 Vision OCR 补充地图名与坐标。监听线程本身不做截图/OCR，避免阻塞系统输入回调。
+
+用户完成桌面操作后，应把角色放回断点记录的地图和坐标，再按默认 `Ctrl-Alt-R`。恢复过程重新读取状态：
+
+- 地图不一致：拒绝恢复；
+- 坐标超过默认 `0` 格误差：拒绝恢复；
+- OCR 无法读取断点或当前状态：拒绝普通恢复；
+- 状态一致：等待默认 3 秒安静倒计时，然后从 `next_action_index` 继续；
+- 倒计时内又有人工输入：取消这次恢复请求，继续暂停。
+
+网页的“强制恢复”会跳过状态比较，仅用于用户已经人工确认界面但 OCR 无法读取的情况。可调整：
+
+```bash
+python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
+python3.12 tracking_click.py --resume-delay-seconds 5
+python3.12 tracking_click.py --resume-coordinate-tolerance 1
+python3.12 tracking_click.py --no-human-input-pause
+```
+
+进程在暂停时退出也不会丢断点。下次启动保持暂停；验证恢复后，调度器优先恢复断点任务、路线和动作，不先执行其他积压任务。
+
+### 12.3 暂停时间与刷新时间
+
+程序区分四种时间：
+
+| 时间 | 暂停时如何处理 |
+|---|---|
+| 游戏资源刷新时间 | 按真实墙钟继续，不因用户占用桌面而延后 |
+| 普通动作 delay | 冻结，恢复后继续剩余时间 |
+| `wait_until_scheduled` | 目标仍是固定墙钟；暂停期间到期则恢复后直接通过时间门 |
+| 移动/提前量学习 | 扣除人工暂停和提前到达后的空等，不污染移速样本 |
+
+所以暂停发生在宰杀之后时，`next_due` 仍从真实宰杀点击计算；暂停发生在宰杀之前时，程序不会把暂停数小时误学成旅行变慢。
+
+### 12.4 资源类型与精确锚点
+
+| 类型 | 任务 | 周期 | 起算动作 |
+|---|---|---:|---|
+| 猪圈/牛棚 | `pig1`、`pig2`、`dali_pig`、`dali_cow` | 60 分钟 | 宰杀确认点击 |
+| 塞北/天山/落日等牧场 | `bear7`、`bear14`、`cow1`、`cow2` | 180 分钟 | 每只牛羊的宰杀确认点击 |
+| 野熊 | `bear1..6`、`bear8..13`、`bear15` | 保留原 60 分钟 | 启动自动战斗的确认点击 |
+| 水果 | `xigua`、`xiangjiao`、`shanzha`、`pingguo`、`changbaipingguo` | 西瓜 120 分钟，其余 300 分钟 | 每个采集交互的第一个确认点击 |
+| 河虾/井水/莲藕/酸菜 | `hexia1/2`、`jianshui`、`lianou`、`suancai` | 保留原 360/300/1440 分钟 | 每个采集交互的第一个确认点击 |
+| 家宅/中转 | `jiazhai`、`bear_tianshan` | 原配置 | 尚无可靠资源动作，保守使用任务完成时间 |
+
+旧 tuple 路线不再全部用路线结束时间。`resource_catalog.py` 只识别 `边栏1/2 -> 空白 -> 确认` 的首个确认；牲畜/野熊只接受主确认坐标，避免把 `cow2` 的入口 `确认2` 当成宰杀。连续数量或结果弹窗也不会重复生成锚点。
+
+多资源路线在 `resource_points` 下分别保存每个点。整条路线取各点 `next_due` 的最大值再出发，保证最后采集的点也已刷新。若中途失败：
+
+- 一个点都没触发：`failed`，默认 10 分钟后重试；
+- 只触发部分点：`partial_failed`，已触发点保留自己的长周期；短期重走路线时会跳过仍在冷却的牲畜/野熊交互四步，只点击当前可用点；
+- 全部资源动作已触发但保存/OCR 清理失败：`post_anchor_failed`，不短期重复宰杀。
+
+### 12.5 Web 资源监控
+
+`tracking_click.py` 默认同时提供：
+
+```text
+http://127.0.0.1:8765
+```
+
+页面包含任务/资源点状态、断点、操作日志、采集台账、估算汇总和暂停/恢复/停止控制。精确点击会立即追加到 `resource_history.jsonl`；数量代表采集事件估算，网页手工调整会标记为非估算记录。
+
+只查看文件而不打开游戏：
+
+```bash
+python3.12 monitor_server.py --host 127.0.0.1 --port 8765
+```
+
+独立模式不附着调度器，控制按钮不可用。默认只监听本机；不要把无认证控制 API 直接暴露到局域网或公网。
+
 ## 13. 游戏更新后的修复流程
 
 1. 暂停坏任务，但保持其他任务运行：
@@ -448,12 +528,12 @@ python3.12 procedure_runner.py --read-state
 ```
 
 4. 使用相同 `--name` 重新录制并 `--install`。raw 文件带时间戳，旧证据不会丢；安装文件会替换。
-5. 分析并 dry-run：
+5. 分析并用独立单元测试验证结构：
 
 ```bash
 python3.12 recording_analyzer.py procedures/dali_pig.json
 python3.12 procedure_runner.py dali_pig --dry-run --startup-delay 0
-python3.12 test.py dali_pig --dry-run --startup-delay 0
+python3.12 -m unittest discover -s tests -v
 ```
 
 6. 在资源可用时单独端到端运行一次，再恢复 7x24 调度。
@@ -502,7 +582,7 @@ updated_at
 ## 15. 验证命令
 
 ```bash
-python3.12 -m py_compile *.py
+python3.12 -m py_compile automation.py smart_automation.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
 python3.12 -m unittest discover -s tests -v
 python3.12 procedure_runner.py --list
 python3.12 procedure_runner.py dali_cow --dry-run --startup-delay 0

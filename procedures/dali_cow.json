@@ -7,7 +7,7 @@
   "start_coordinate": [32, 18],
   "target_coordinate": [28, 11],
   "schedule": {
-    "interval_minutes": 180.0,
+    "interval_minutes": 60.0,
     "initial_delay_minutes": 0.0,
     "lead_seconds": 75.0,
     "before_routes": ["sleep1"],

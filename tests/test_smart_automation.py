@@ -779,7 +779,7 @@ class SmartAutomationTests(unittest.TestCase):
             due = tracking_click.sync_external_procedure_result(state_path, procedure, result)
             state = json.loads(state_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(due, anchor + timedelta(minutes=180))
+        self.assertEqual(due, anchor + timedelta(minutes=60))
         self.assertEqual(state["dali_cow"]["next_due"], due.isoformat(timespec="milliseconds"))
         self.assertEqual(state["dali_cow"]["last_status"], "external_ok")
         self.assertEqual(state["dali_cow"]["lead_seconds"], 75.0)
