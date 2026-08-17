@@ -18,7 +18,13 @@
       "type": "click",
       "label": "打开包袱",
       "before_delay": 0.5,
-      "point": [485, 1605]
+      "point": [485, 1605],
+      "expect_text": "叫唤马车",
+      "expect_text_exact": true,
+      "expect_text_region": [0.2143, 0.695, 0.3918, 0.7919],
+      "expect_text_stable_samples": 1,
+      "timeout": 5.0,
+      "retries": 1
     },
     {
       "type": "click",

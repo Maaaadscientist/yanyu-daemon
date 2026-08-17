@@ -15,6 +15,7 @@ from smart_automation import (
     ProcedureResult,
     SmartProcedureRunner,
     StateReadError,
+    StateTimeout,
     TextObservation,
     VisionGameStateReader,
     action_timing_key,
@@ -304,6 +305,37 @@ class SmartAutomationTests(unittest.TestCase):
 
         self.assertEqual(automation.clicks, [(900, 800), (1950, 704)])
         self.assertIsNotNone(result.refresh_anchor)
+
+    def test_runner_retries_a_reversible_ui_click_when_its_text_does_not_appear(self):
+        class FlakyTextReader(FakeStateReader):
+            def __init__(self):
+                self.calls = 0
+
+            def wait_for_text(self, *args, **kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    raise StateTimeout("panel did not open")
+                return super().wait_for_text(*args, **kwargs)
+
+        automation = FakeAutomation()
+        reader = FlakyTextReader()
+        procedure = {
+            "schema_version": 1,
+            "name": "open_inventory",
+            "actions": [
+                {
+                    "type": "click",
+                    "point": [485, 1605],
+                    "expect_text": "叫唤马车",
+                    "retries": 1,
+                }
+            ],
+        }
+
+        SmartProcedureRunner(automation, state_reader=reader, timing_file=None).run(procedure)
+
+        self.assertEqual(automation.clicks, [(485, 1605), (485, 1605)])
+        self.assertEqual(reader.calls, 2)
 
     def test_runner_prefers_recorded_text_over_stale_pixel(self):
         automation = FakeAutomation()
