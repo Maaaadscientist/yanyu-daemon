@@ -111,6 +111,11 @@ def parse_game_state(observations: Sequence[TextObservation]) -> GameState:
 
     _, coordinate_observation, match = max(coordinate_candidates, key=lambda item: item[0])
     coordinate = int(match.group(1)), int(match.group(2))
+    inline_map = coordinate_observation.text.replace(" ", "")[: match.start()].strip(
+        "\t:：-—|[]【】"
+    )
+    if 1 <= len(inline_map) <= 10:
+        return GameState(inline_map, coordinate, tuple(observations))
     same_line = [
         observation
         for observation in observations

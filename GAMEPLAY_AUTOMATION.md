@@ -104,7 +104,7 @@ Vision 偶尔会把 `(29,6)` 识别成 `（29.6）`。解析器现在接受中�
 
 世界地图会保留/改变平移位置，且打开时与当前城市有关，所以目的地图标不能只保存一个绝对像素。当前实现用 `assets/world_map_reference.jpg` 保存一张成功地图视图，运行时通过 ORB 特征匹配和 RANSAC 仿射估计，把参考图中的大理点映射到当前画面。匹配数、内点比例、缩放或旋转不满足阈值时直接失败，不盲点目的地；点开后还必须在弹窗区域识别到 `大理`，再查找 `确定前往`。
 
-当前所在城市的马车图标会被白色角色标记替换，因此大理流程第一步要求角色不在大理。7x24 任务先运行 `sleep1` 前往乌思雪原，满足这个前置条件；手工完整测试也应先从其他地图出发。
+当前所在城市的马车图标会被白色角色标记替换，因此任何马车流程都不能把当前地图再次当成出发目的地。调度器会先 OCR 当前地图；若与马车目的地相同，就只执行洛阳或南阳渡路线的马车前缀，确认落地后再从目标路线第一步重跑。`sleep1` 的世界地图入口叫“乌思雪原”，实际落地页 OCR 为 `逻邪河谷`，两者在恢复判断中按同一地点处理。
 
 ### 4.4 普通步行
 
@@ -432,7 +432,7 @@ python3.12 tracking_click.py --stop-hotkey '<ctrl>+<shift>+x'
 python3.12 tracking_click.py --no-stop-hotkey
 ```
 
-### 12.2 人工输入暂停与断点恢复
+### 12.2 人工输入暂停与从头恢复
 
 当前 macOS 游戏客户端无法接收可靠的 PID 定向后台点击，因此自动化仍与系统桌面共用鼠标。2026-08-17 在重新授予 Python 辅助功能权限后再次测试：private/HID 两种事件源均能在不移动光标、不抢终端或 ToDesk 前台的情况下投递到游戏 PID，但登录页“账号登录”按钮没有响应；辅助功能树也只有一个通用 `AXTextArea`，没有游戏内部控件。该权限对前台自动化和人工输入检测有用，但不会让 UIKit 游戏画布接受后台点击。调度器继续采用“检测到人工输入就让权”的方式处理：
 
@@ -443,24 +443,28 @@ python3.12 tracking_click.py --no-stop-hotkey
 5. `runtime_control.json` 立即保存任务、路线序号、下一动作序号、动作标签、阶段、暂停原因和时间。
 6. 工作线程再用 Vision OCR 补充地图名与坐标。监听线程本身不做截图/OCR，避免阻塞系统输入回调。
 
-用户完成桌面操作后，应把角色放回断点记录的地图和坐标，再按默认 `Ctrl-Alt-R`。恢复过程重新读取状态：
+恢复不再要求用户复原旧地图和旧坐标，也绝不消费 `next_action_index`。按默认 `Ctrl-Alt-R` 或网页“安全从头恢复”后：
 
-- 地图不一致：拒绝恢复；
-- 坐标超过默认 `0` 格误差：拒绝恢复；
-- OCR 无法读取断点或当前状态：拒绝普通恢复；
-- 状态一致：等待默认 3 秒安静倒计时，然后从 `next_action_index` 继续；
-- 倒计时内又有人工输入：取消这次恢复请求，继续暂停。
+1. 旧断点写入 `automation_checkpoint_abandoned`，只保留作审计。
+2. 若已在游戏内，只要求地图与坐标可读，不要求与旧断点一致。
+3. 若在登录页，依次识别并执行：`账号登录`、已保存账号的 `登录`、关闭更新公告、勾选协议、`开始游戏`。
+4. 检测到“其他设备上传过更新版本存档（或者设备登出过）”时，只点击 `确认` 强制下载服务器存档；恢复过程不输入密码，也不选择本地上传。
+5. 等待默认 3 秒安静倒计时；期间有新人工输入就拒绝本次恢复。
+6. 生成 `restart_task` 恢复票据，从任务第 1 条路线、第 1 个动作重新运行。
+7. 若所有活动资源都已刷新，不锁定旧任务，改由正常优先级从完整待执行队列开头选择。
 
-网页的“强制恢复”会跳过状态比较，仅用于用户已经人工确认界面但 OCR 无法读取的情况。可调整：
+网页“强制从头恢复”仅跳过无法识别页面时的会话检查，仍然从任务开头运行，不能恢复中间动作。可调整：
 
 ```bash
 python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
 python3.12 tracking_click.py --resume-delay-seconds 5
-python3.12 tracking_click.py --resume-coordinate-tolerance 1
 python3.12 tracking_click.py --no-human-input-pause
+python3.12 tracking_click.py --session-check-seconds 10
 ```
 
-进程在暂停时退出也不会丢断点。下次启动保持暂停；验证恢复后，调度器优先恢复断点任务、路线和动作，不先执行其他积压任务。
+`SessionWatchdog` 默认每 15 秒只读识别账号入口、登录表单、游戏主页、服务器下载提示和异地登录提示。运行中命中这些页面会立即请求暂停并保存任务上下文。登录恢复是按当前页面推进的状态机，因此在公告页或下载确认页中途重启也不需要从账号入口重放。
+
+进程在暂停时退出不会丢失旧断点。下次启动继续保持暂停；安全恢复后，旧任务若仍需处理就整条重跑，已记录锚点且仍在冷却的资源交互会跳过。
 
 ### 12.3 暂停时间与刷新时间
 
@@ -469,7 +473,7 @@ python3.12 tracking_click.py --no-human-input-pause
 | 时间 | 暂停时如何处理 |
 |---|---|
 | 游戏资源刷新时间 | 按真实墙钟继续，不因用户占用桌面而延后 |
-| 普通动作 delay | 冻结，恢复后继续剩余时间 |
+| 普通动作 delay | 暂停期间冻结；接受恢复后随整条路线重新计时 |
 | `wait_until_scheduled` | 目标仍是固定墙钟；暂停期间到期则恢复后直接通过时间门 |
 | 移动/提前量学习 | 扣除人工暂停和提前到达后的空等，不污染移速样本 |
 
@@ -490,10 +494,23 @@ python3.12 tracking_click.py --no-human-input-pause
 
 旧 tuple 路线不再全部用路线结束时间。`resource_catalog.py` 识别 `边栏1/2 -> 空白 -> 确认` 的首个确认；长白山熊和天山熊使用命名移动点。`bear1` 会同时生成 `bear1:bear` 与 `bear1:cow`，其余旧 `bear*` 地图牛路线各生成一个牛点。连续数量或结果弹窗不会重复生成锚点。
 
-多资源路线在 `resource_points` 下分别保存每个点。整条路线取各点 `next_due` 的最大值再出发，保证最后采集的点也已刷新。若中途失败：
+多资源路线在 `resource_points` 下分别保存每个点，并学习：
+
+- `anchor_offset_seconds`：从任务开头到该点真实刷新点击的活动耗时 EWMA；
+- `anchor_offset_samples`：有效样本数；
+- `segment_seconds`：上一资源锚点到当前锚点的活动耗时 EWMA。
+
+样本会扣除人工暂停和资源闸门等待。调度器用各点 `next_due - anchor_offset_seconds` 中最早的时间作为出发窗口。到达交互前若该点将在默认 300 秒内刷新，就在 `边栏` 前等到精确时刻；更晚的点本轮跳过，避免为了一个长冷却点卡住整条队列。可用 `--resource-gate-max-wait-seconds` 调整。
+
+`bear7`、`cow1`、`bear14` 在塞北、祁连和天山宰杀前有两层功德保护：先要求 `sleep1` 的“休息中”遮罩结束并识别蓝色 `子`，随后在每只牛羊的交互入口再次识别 `子`。任何一次读不到或已到白天都直接失败，不派发宰杀点击。2026-08-17 的隔离实测从白天出发，木床休息后 `子` 模板相似度为 `0.974`。
+
+多点路线每个成功锚点都会立刻写本地状态和台账；除最后一点外，还执行一次游戏内 `save`，最后一点继续使用任务尾部原有 `save`。可用 `--no-intermediate-saves` 禁用游戏内中间保存。
+
+若中途失败：
 
 - 一个点都没触发：`failed`，默认 10 分钟后重试；
 - 只触发部分点：`partial_failed`，已触发点保留自己的长周期；短期重走路线时会跳过仍在冷却的牲畜/野熊交互四步，只点击当前可用点；
+- 失败退避单独保存为 `retry_not_before`；即使某个逐点刷新时间已经到期，或进程在失败后重启，也必须先等到该重试时间，避免立即失败循环占满队列；
 - 全部资源动作已触发但保存/OCR 清理失败：`post_anchor_failed`，不短期重复宰杀。
 
 ### 12.5 Web 资源监控
@@ -544,7 +561,7 @@ python3.12 tracking_click.py \
   --web-tls-key-file "$HOME/.config/yanyu-daemon/web-key.pem"
 ```
 
-另一台局域网设备访问 `https://192.168.1.3:8765`，用户名为 `yanyu`，密码保存在 `~/.config/yanyu-daemon/web-password`。首次访问需核对并接受自签名证书；其 SHA-256 指纹可用 `openssl x509 -in ~/.config/yanyu-daemon/web-cert.pem -noout -fingerprint -sha256` 查看。普通“恢复”仍校验地图坐标，OCR 不可读时必须先人工确认画面，再使用“强制恢复”。`8766` 保持只读，两个端口都不得映射到公网。
+另一台局域网设备访问 `https://192.168.1.3:8765`，用户名为 `yanyu`，密码保存在 `~/.config/yanyu-daemon/web-password`。首次访问需核对并接受自签名证书；其 SHA-256 指纹可用 `openssl x509 -in ~/.config/yanyu-daemon/web-cert.pem -noout -fingerprint -sha256` 查看。“安全从头恢复”可从已识别的登录页自动确认服务器最新存档；“强制从头恢复”只跳过会话识别，不会续跑旧动作。`8766` 保持只读，两个端口都不得映射到公网。
 
 ## 13. 游戏更新后的修复流程
 
@@ -616,7 +633,7 @@ updated_at
 ## 15. 验证命令
 
 ```bash
-python3.12 -m py_compile automation.py smart_automation.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
+python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
 python3.12 -m unittest discover -s tests -v
 python3.12 procedure_runner.py --list
 python3.12 procedure_runner.py dali_cow --dry-run --startup-delay 0

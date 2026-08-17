@@ -37,7 +37,8 @@ For the detailed Chinese gameplay model, verified Dali routes, scheduler timing,
 - `route_analyzer.py`: analyzes stored routes without opening the game.
 - `pattern_learner.py`: compares per-action screenshots from a route run to flag suspicious actions.
 - `tracking_click.py`: 7x24 scheduler with per-task state, exact resource anchors, retries, and failure captures.
-- `runtime_control.py`: physical-input detection, synthetic-input suppression, persisted checkpoints, and validated resume.
+- `runtime_control.py`: physical-input detection, synthetic-input suppression, persisted checkpoints, and from-the-beginning recovery tickets.
+- `game_session.py`: login-page recovery, latest-server-save confirmation, remote-logout detection, and `子时` verification.
 - `resource_catalog.py`: refresh policies, legacy action-anchor inference, per-point state, and acquisition ledger.
 - `monitor_server.py` and `web/`: local resource dashboard and scheduler controls.
 - `GAMEPLAY_AUTOMATION.md`: detailed Chinese manual and the game-action model derived from the recorded routes.
@@ -454,7 +455,9 @@ Important behavior:
 - Pen animals (`pig1`, `pig2`, `dali_pig`, and `dali_cow`) use 60 minutes. The legacy `bear2/3/4/5/6/8/9/10/11/12/13/15` names are map-cow routes for Gusu, Hangzhou, Quanzhou, Luoyang, Nanyangdu, Luoxia, Emei, Mingyue, Longquan, Shuangwang, Huashan, and Fengming; each records one cow on a 60-minute timer.
 - `bear1` contains two independent resources: the Changbai bear at action 15 and the Changbai cow at action 21. `bear_tianshan` contains the Tianshan bear at action 13. These are the only two wild-bear resource points.
 - Sai Bei, Tianshan, Sunset Ranch, and the other ranch routes (`bear7`, `bear14`, `cow1`, and `cow2`) use 180 minutes.
-- Multi-point routes persist one timer per resource point. The complete route becomes due when the latest point is ready, so an early point is not used to start the route before the final point refreshes.
+- Multi-point routes persist one timer and one learned `anchor_offset_seconds` per resource point. Route start is selected from the earliest point-specific travel window; a point due within 300 seconds waits at its interaction gate, while a farther cooling point is skipped for this pass.
+- `bear7`, `cow1`, and `bear14` must complete `sleep1` and visually verify the cyan `子` period. The period is checked again before every Sai Bei/Qilian/Tianshan livestock interaction; an unreadable or daytime period fails closed before slaughter.
+- Multi-point routes upload an in-game intermediate save after every successful point except the final point, which is followed by the normal `save` route. Local scheduler state and the acquisition ledger are still persisted immediately at every exact anchor.
 - Routes without a proven action anchor, currently home maintenance, retain the conservative task-completion fallback.
 - If a task crashes, it is marked `failed`, a failure event is logged, a screenshot is captured, and the task retries after 10 minutes.
 - Failed completion does not shift the long refresh anchor.
@@ -471,7 +474,7 @@ Important behavior:
 - A global `<ctrl>+c` hotkey is enabled by default, including when the scheduler runs in a detached `screen` session. It requests a graceful stop, saves every task's current schedule, and writes `scheduler_hotkey_stop_requested` followed by `scheduler_stopped` to the JSONL log.
 - Normal delays, OCR polling, and scheduled refresh waits stop immediately. An in-progress atomic `rapid_clicks` group finishes first so a multi-jump is not abandoned halfway through.
 
-### Human Takeover And Checkpoint Resume
+### Human Takeover And Safe Restart
 
 Physical input monitoring is enabled by default. Synthetic `pyautogui` events are wrapped in an automation-input guard, so the scheduler does not pause itself.
 
@@ -479,23 +482,29 @@ When a real mouse or keyboard event is detected:
 
 1. The scheduler stops before dispatching the next non-atomic action.
 2. `runtime_control.json` records the task, route number, next action number, action label, pause reason, and pause time.
-3. macOS Vision captures the game map and coordinate from the game window into the checkpoint.
+3. macOS Vision captures the game map and coordinate when readable. The old route/action remains audit evidence only.
 4. Relative movement/UI delays freeze. Existing resource due times continue to follow wall-clock time because the game refreshes while the scheduler is paused.
-5. Return the character to the recorded map and exact coordinate, then press `Ctrl-Alt-R`.
-6. The state is read again. A mismatch keeps the scheduler paused; a match starts a three-second quiet countdown and resumes from the recorded action.
+5. Press `Ctrl-Alt-R` or use `安全从头恢复` on the authenticated dashboard. Do not manually reconstruct the old mid-route screen.
+6. If the client is on a login screen, recovery opens account login, submits only the already-saved credentials, closes the update notice, checks the agreement, starts the selected character, and confirms the prompt that force-downloads the newer server save. It never selects a local upload.
+7. The old action checkpoint is marked abandoned. After the quiet countdown, the interrupted task restarts at route 1/action 1. Before any carriage route, a readable map and coordinate are required.
+8. If the carriage destination is the current map and its icon is hidden by the player marker, the runner first travels to neutral Luoyang or Nanyangdu, verifies that landing, and then repeats the complete target route.
 
-The accumulated pause duration is stored per task and excluded from movement/lead-time learning. If a resource becomes ready during a long pause, it is immediately eligible after a valid resume; its game refresh clock is not shifted by desktop usage.
+The accumulated pause duration is stored per task and excluded from movement and point-arrival learning. Resource refresh clocks continue during desktop use. Cooldown points already anchored before a pause are skipped on the restarted pass; ready or unknown points are handled normally. If every active resource is ready, recovery drops the interrupted-task priority and starts a normal full queue from its first due task.
+
+The session watchdog checks for provider login, account login, home, server-download, and remote-login screens every 15 seconds. A match pauses the scheduler and preserves the current task context. The login state machine is idempotent, so a process interruption at an intermediate login page continues by detecting that page rather than replaying earlier clicks.
 
 Useful options:
 
 ```bash
 python3.12 tracking_click.py --resume-hotkey '<ctrl>+<alt>+r'
 python3.12 tracking_click.py --resume-delay-seconds 5
-python3.12 tracking_click.py --resume-coordinate-tolerance 1
 python3.12 tracking_click.py --no-human-input-pause
+python3.12 tracking_click.py --session-check-seconds 10
+python3.12 tracking_click.py --resource-gate-max-wait-seconds 300
+python3.12 tracking_click.py --no-intermediate-saves
 ```
 
-Normal resume deliberately rejects an unreadable or mismatched checkpoint. Use the dashboard's `强制恢复` only after manually verifying the game state. Atomic `rapid_clicks` groups cannot pause halfway; a pending pause is honored immediately after the group finishes.
+Normal recovery requires a recognized login page or a readable in-game map/coordinate. `强制从头恢复` skips that recognition only; it still cannot resume a saved middle action. Atomic `rapid_clicks` groups cannot pause halfway; a pending pause is honored immediately after the group finishes.
 
 ### Resource State And Acquisition Ledger
 
@@ -504,7 +513,9 @@ Normal resume deliberately rejects an unreadable or mismatched checkpoint. Use t
 - `interval_minutes`, `resource_category`, and `resource_name`;
 - `human_pause_seconds` accumulated while that task was active;
 - `resource_points`, with one `last_refresh_anchor` and `next_due` per animal or collection point;
+- per-point `anchor_offset_seconds`, `anchor_offset_samples`, and inter-point `segment_seconds` learned from real runs after subtracting human pauses and scheduled gate waits;
 - `partial_failed` when a multi-point route fails before every expected anchor is reached.
+- `retry_not_before`, persisted independently from point refresh clocks, so a failed multi-point route cannot bypass its retry delay after a scheduler restart.
 
 Every exact anchor appends a `resource_acquired` event to `resource_history.jsonl` immediately. Quantities are acquisition-event estimates, not OCR-confirmed inventory counts. Manual positive or negative adjustments can be added from the dashboard and remain distinguishable from estimated records.
 
@@ -599,12 +610,13 @@ PASSWORD=$(cat "$HOME/.config/yanyu-daemon/web-password")
 # Inspect the checkpoint first. --insecure is only for the locally generated certificate.
 curl --insecure --user "yanyu:$PASSWORD" https://127.0.0.1:8765/api/status
 
-# Use normal resume when map and coordinates are readable and unchanged.
+# Safe recovery handles a recognized login screen or any readable in-game location,
+# abandons the old middle action, and restarts from route 1/action 1.
 curl --insecure --user "yanyu:$PASSWORD" \
   -H 'X-Yanyu-Request: dashboard' -X POST \
   https://127.0.0.1:8765/api/control/resume
 
-# Use force resume only after visually confirming an unreadable overlay such as the carriage map.
+# Force still restarts from the beginning; it only skips session recognition.
 curl --insecure --user "yanyu:$PASSWORD" \
   -H 'X-Yanyu-Request: dashboard' -X POST \
   https://127.0.0.1:8765/api/control/force-resume
@@ -827,7 +839,7 @@ This waits two seconds before clicking `确认`.
 Syntax check:
 
 ```bash
-python3.12 -m py_compile automation.py smart_automation.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
+python3.12 -m py_compile automation.py smart_automation.py game_session.py tracking_click.py runtime_control.py resource_catalog.py monitor_server.py
 ```
 
 Route discovery:

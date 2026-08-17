@@ -38,7 +38,7 @@ class RuntimeControlTests(unittest.TestCase):
             self.assertEqual(checkpoint["task"], "pig1")
             self.assertEqual(checkpoint["next_action_index"], 12)
 
-    def test_resume_requires_the_recorded_map_and_coordinate(self):
+    def test_resume_abandons_the_old_position_and_issues_a_restart_ticket(self):
         current = {"map": "大理", "coordinate": [29, 3]}
         with tempfile.TemporaryDirectory() as directory:
             control = self.make_control(directory)
@@ -51,13 +51,45 @@ class RuntimeControlTests(unittest.TestCase):
             with self.assertRaises(ResumeValidationError):
                 control._validate_resume_state()
 
-            current = {"map": "大理", "coordinate": [29, 3]}
             control.request_resume(source="test")
             control.wait_if_paused()
 
             self.assertFalse(control.is_paused)
             resumed = control.consume_resume_checkpoint()
-            self.assertEqual(resumed["coordinate"], [29, 3])
+            self.assertEqual(resumed["recovery_mode"], "restart_task")
+            self.assertEqual(resumed["next_action_index"], 1)
+            self.assertEqual(resumed["abandoned_checkpoint"]["coordinate"], [29, 3])
+            self.assertEqual(current["coordinate"], [28, 11])
+
+    def test_normal_restart_requires_a_readable_current_game_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(directory)
+            control.set_state_provider(lambda: {"map": None, "coordinate": None})
+            with self.assertRaises(ResumeValidationError):
+                control._validate_restart_state()
+
+    def test_resume_preparer_can_restore_a_login_session_before_restart(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as directory:
+            control = self.make_control(directory)
+            control.set_context(task="bear5", route="bear5", next_action_index=6)
+            control.set_resume_preparer(
+                lambda **request: calls.append(request) or {
+                    "state": "in_game",
+                    "map": "逻邪河谷",
+                    "coordinate": [12, 6],
+                }
+            )
+            control.request_pause(reason="session_login_provider")
+            control.request_resume(source="web")
+            control.wait_if_paused()
+
+            ticket = control.consume_resume_checkpoint()
+
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(calls[0]["force"])
+        self.assertEqual(ticket["recovery_state"]["map"], "逻邪河谷")
+        self.assertEqual(ticket["abandoned_checkpoint"]["next_action_index"], 6)
 
     def test_paused_checkpoint_survives_process_recreation(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 
 
-RUNTIME_CONTROL_SCHEMA_VERSION = 1
+RUNTIME_CONTROL_SCHEMA_VERSION = 2
 
 _MODIFIER_KEY_NAMES = frozenset(
     {
@@ -74,6 +74,7 @@ class RuntimeControl:
         self._synthetic_depth = 0
         self._ignore_input_until = 0.0
         self._state_provider: Callable[[], object] | None = None
+        self._resume_preparer: Callable[..., Mapping | None] | None = None
         self._listeners: list[object] = []
         self._load()
 
@@ -91,6 +92,10 @@ class RuntimeControl:
 
     def set_state_provider(self, provider: Callable[[], object] | None) -> None:
         self._state_provider = provider
+
+    def set_resume_preparer(self, preparer: Callable[..., Mapping | None] | None) -> None:
+        """Set the preflight used before issuing a from-the-beginning recovery ticket."""
+        self._resume_preparer = preparer
 
     def set_context(self, **values) -> None:
         with self._lock:
@@ -196,7 +201,14 @@ class RuntimeControl:
                 "requested_at": requested_at,
             }
             self.resume_requested.set()
-        self._emit({"event": "automation_resume_requested", "source": source, "force": bool(force)})
+        self._emit(
+            {
+                "event": "automation_resume_requested",
+                "source": source,
+                "force": bool(force),
+                "mode": "restart_task",
+            }
+        )
         return True
 
     def pending_checkpoint(self) -> dict | None:
@@ -235,6 +247,7 @@ class RuntimeControl:
                 "active_pause_seconds": round(active_pause, 3),
                 "total_pause_seconds": round(self._total_pause_seconds + active_pause, 3),
                 "resume_hotkey": self.resume_hotkey,
+                "resume_policy": "restart_task",
                 "checkpoint": copy.deepcopy(self._checkpoint),
                 "context": copy.deepcopy(self._context),
             }
@@ -301,8 +314,17 @@ class RuntimeControl:
             force = bool(request.get("force"))
             source = str(request.get("source", "unknown"))
             try:
-                current_state = None if force else self._validate_resume_state()
-            except ResumeValidationError as exc:
+                if self._resume_preparer is not None:
+                    prepared = self._resume_preparer(
+                        force=force,
+                        checkpoint=self.pending_checkpoint() or {},
+                    )
+                    current_state = dict(prepared or {})
+                else:
+                    current_state = None if force else self._validate_restart_state()
+            except Exception as exc:
+                if isinstance(exc, KeyboardInterrupt):
+                    raise
                 print(f"Resume rejected: {exc}")
                 self._emit(
                     {
@@ -438,6 +460,14 @@ class RuntimeControl:
                 )
         return current
 
+    def _validate_restart_state(self) -> dict:
+        current = self._read_state()
+        if not current.get("map") or self._coordinate(current.get("coordinate")) is None:
+            raise ResumeValidationError(
+                "the current game map and coordinate are unreadable; login recovery is required"
+            )
+        return current
+
     def _read_state(self) -> dict:
         if self._state_provider is None:
             return {"map": None, "coordinate": None}
@@ -470,19 +500,42 @@ class RuntimeControl:
         with self._lock:
             duration = max(0.0, (now - self._paused_at).total_seconds()) if self._paused_at else 0.0
             self._total_pause_seconds += duration
-            self._resume_checkpoint = copy.deepcopy(self._checkpoint)
+            abandoned = copy.deepcopy(self._checkpoint) or {}
+            self._resume_checkpoint = {
+                "task": abandoned.get("task"),
+                "phase": "restart_task",
+                "recovery_mode": "restart_task",
+                "route_index": 1,
+                "next_action_index": 1,
+                "requested_at": now.isoformat(timespec="milliseconds"),
+                "source": source,
+                "force": bool(force),
+                "recovery_state": copy.deepcopy(current_state),
+                "abandoned_checkpoint": abandoned,
+            }
             self.pause_event.clear()
             self._paused_at = None
             self._pause_reason = None
             self._pause_source = None
             self._checkpoint = None
             self._save_locked()
-        print(f"Automation resumed after {duration:.1f}s pause.")
+        print(f"Automation recovery accepted after {duration:.1f}s pause; task will restart from its beginning.")
+        self._emit(
+            {
+                "event": "automation_checkpoint_abandoned",
+                "source": source,
+                "task": abandoned.get("task"),
+                "route": abandoned.get("route"),
+                "next_action_index": abandoned.get("next_action_index"),
+                "reason": "restart_from_task_beginning",
+            }
+        )
         self._emit(
             {
                 "event": "automation_resumed",
                 "source": source,
                 "force": force,
+                "mode": "restart_task",
                 "pause_seconds": round(duration, 3),
                 "state": current_state,
             }

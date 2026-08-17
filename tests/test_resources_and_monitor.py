@@ -29,8 +29,10 @@ class FakeRouteAutomation:
     def __init__(self, base_time, runtime_control=None):
         self.base_time = base_time
         self.runtime_control = runtime_control
+        self.calls = []
 
-    def run_actions(self, actions, *, action_logger, **_kwargs):
+    def run_actions(self, actions, *, action_logger=None, **_kwargs):
+        self.calls.append(dict(_kwargs))
         skipped = set(_kwargs.get("skip_action_indexes", ()))
         for index, _action in enumerate(actions, start=1):
             if index in skipped:
@@ -38,14 +40,15 @@ class FakeRouteAutomation:
                     {"event": "legacy_action_skipped", "index": index, "reason": "resource_cooldown"}
                 )
                 continue
-            dispatched_at = self.base_time + timedelta(seconds=index)
-            action_logger(
-                {
-                    "event": "legacy_action_dispatched",
-                    "index": index,
-                    "dispatched_at": dispatched_at.isoformat(timespec="milliseconds"),
-                }
-            )
+            if action_logger:
+                dispatched_at = self.base_time + timedelta(seconds=index)
+                action_logger(
+                    {
+                        "event": "legacy_action_dispatched",
+                        "index": index,
+                        "dispatched_at": dispatched_at.isoformat(timespec="milliseconds"),
+                    }
+                )
 
     def capture_screenshot(self, *_args, **_kwargs):
         return None
@@ -93,6 +96,91 @@ class FakeWebRuntimeControl:
 
 
 class ResourcesAndMonitorTests(unittest.TestCase):
+    def test_carriage_metadata_extracts_destination_and_safe_travel_prefix(self):
+        self.assertEqual(tracking_click.legacy_carriage_destination("sleep1"), "乌思雪原")
+        self.assertEqual(tracking_click.legacy_carriage_destination("bear5"), "洛阳")
+        self.assertEqual(tracking_click.legacy_carriage_destination("cow2"), "幽州")
+        self.assertTrue(tracking_click.carriage_destination_matches("逻邪河谷", "乌思雪原"))
+        prefix = tracking_click.legacy_carriage_prefix("bear5")
+        self.assertLess(len(prefix), len(coordinates.bear5))
+        self.assertEqual(prefix[-1][0], coordinates.pos["洛阳出发"])
+
+    def test_point_level_offsets_start_a_staggered_route_for_its_first_window(self):
+        now = datetime.now()
+        task_state = {
+            "next_due": now + timedelta(minutes=8),
+            "lead_seconds": 0,
+            "resource_points": {
+                "first": {
+                    "next_due": now + timedelta(minutes=5),
+                    "anchor_offset_seconds": 80,
+                },
+                "second": {
+                    "next_due": now + timedelta(minutes=8),
+                    "anchor_offset_seconds": 140,
+                },
+            },
+        }
+
+        self.assertEqual(
+            tracking_click.task_start_time(task_state),
+            now + timedelta(minutes=5, seconds=-80),
+        )
+        self.assertFalse(tracking_click.all_resources_ready({"route": task_state}, ["route"], now=now))
+        for point in task_state["resource_points"].values():
+            point["next_due"] = now - timedelta(seconds=1)
+        self.assertTrue(tracking_click.all_resources_ready({"route": task_state}, ["route"], now=now))
+
+    def test_point_timing_uses_an_ewma_without_discarding_samples(self):
+        point = {}
+        tracking_click.update_point_anchor_timing(point, 100, 20)
+        tracking_click.update_point_anchor_timing(point, 110, 30)
+
+        self.assertEqual(point["anchor_offset_seconds"], 103.0)
+        self.assertEqual(point["segment_seconds"], 23.0)
+        self.assertEqual(point["anchor_offset_samples"], 2)
+
+    def test_retry_gate_overrides_an_already_due_point_window(self):
+        now = datetime.now()
+        retry_at = now + timedelta(minutes=10)
+        task_state = {
+            "next_due": retry_at,
+            "last_status": "partial_failed",
+            "retry_not_before": retry_at,
+            "lead_seconds": 0,
+            "resource_points": {
+                "failed_point": {
+                    "next_due": now - timedelta(minutes=1),
+                    "anchor_offset_seconds": 120,
+                }
+            },
+        }
+
+        self.assertEqual(tracking_click.task_start_time(task_state), retry_at)
+
+    def test_load_state_migrates_the_old_failed_next_due_into_a_retry_gate(self):
+        retry_at = datetime.now() + timedelta(minutes=10)
+        retry_at = retry_at.replace(microsecond=retry_at.microsecond // 1000 * 1000)
+        old_point_due = datetime.now() - timedelta(minutes=5)
+        raw = {
+            "bear7": {
+                "next_due": retry_at.isoformat(timespec="milliseconds"),
+                "last_status": "partial_failed",
+                "resource_points": {
+                    "bear7:1": {
+                        "next_due": old_point_due.isoformat(timespec="milliseconds"),
+                    }
+                },
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            state_file.write_text(json.dumps(raw), encoding="utf-8")
+            state = tracking_click.load_state(state_file, {"bear7": tracking_click.TASKS["bear7"]})
+
+        self.assertEqual(state["bear7"]["retry_not_before"], retry_at)
+        self.assertEqual(tracking_click.task_start_time(state["bear7"]), retry_at)
+
     def test_legacy_livestock_routes_find_only_primary_confirmation_anchors(self):
         cases = (("pig1", pig1, 1), ("cow2", cow2, 3), ("bear7", bear7, 5), ("bear14", bear14, 4))
         for task, route, expected in cases:
@@ -541,7 +629,7 @@ class ResourcesAndMonitorTests(unittest.TestCase):
         self.assertIs(context.arguments[0], raw_connection)
         self.assertFalse(context.arguments[1]["do_handshake_on_connect"])
 
-    def test_resumed_task_uses_original_pause_baseline_and_start_time(self):
+    def test_recovered_task_discards_the_mid_action_checkpoint_and_restarts(self):
         original_start = datetime.now() - timedelta(minutes=8)
         runtime = FakeRuntimeControl(total_pause_seconds=125)
         task = tracking_click.ScheduledTask("checkpoint_test", 60, 0, ("save",))
@@ -579,17 +667,19 @@ class ResourcesAndMonitorTests(unittest.TestCase):
                 completion_padding_seconds=0,
                 retry_minutes=10,
             )
+            automation = FakeRouteAutomation(datetime.now(), runtime)
             tracking_click.run_task(
                 task,
-                FakeRouteAutomation(datetime.now(), runtime),
+                automation,
                 smart_runner=None,
                 args=args,
                 state=state,
                 resume_checkpoint=checkpoint,
             )
 
-        self.assertEqual(state["checkpoint_test"]["last_started"], original_start.replace(microsecond=original_start.microsecond // 1000 * 1000))
-        self.assertEqual(state["checkpoint_test"]["human_pause_seconds"], 104)
+        self.assertGreater(state["checkpoint_test"]["last_started"], original_start)
+        self.assertEqual(state["checkpoint_test"]["human_pause_seconds"], 4)
+        self.assertEqual(automation.calls[0].get("start_index"), 1)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from coordinates import *
+from game_session import LOGIN_STATES, GamePeriodReader, GameSessionManager, SessionWatchdog
 from monitor_server import MonitorData, MonitoringServer, read_auth_token_file
 from resource_catalog import (
     ResourceLedger,
@@ -17,7 +18,7 @@ from resource_catalog import (
     smart_anchor_specs,
 )
 from runtime_control import RuntimeControl
-from smart_automation import SmartProcedureRunner, load_procedures
+from smart_automation import StateReadError, SmartProcedureRunner, load_procedures
 
 
 @dataclass(frozen=True)
@@ -111,12 +112,127 @@ BASE_TASKS = dict(TASKS)
 BASE_GROUPS = {name: tuple(values) for name, values in GROUPS.items()}
 PROCEDURES = {}
 
+NIGHT_GATED_TASKS = frozenset({"bear7", "cow1", "bear14"})
+NEUTRAL_TRAVEL_ROUTES = ("bear5", "bear6")
+CARRIAGE_DESTINATION_MAP_ALIASES = {
+    "乌思雪原": frozenset({"乌思雪原", "逻邪河谷", "逻娑河谷"}),
+}
+
 
 ROUTES = {
     name: value
     for name, value in globals().items()
     if isinstance(value, list) and all(isinstance(item, tuple) and len(item) == 2 for item in value)
 }
+
+POSITION_NAMES = {}
+for _name, _point in pos.items():
+    POSITION_NAMES.setdefault(_point, []).append(_name)
+
+
+def legacy_carriage_destination(route_name):
+    for target, _delay in ROUTES.get(route_name, ()):
+        if not (isinstance(target, tuple) and len(target) == 2 and isinstance(target[0], int)):
+            continue
+        departure = next(
+            (name for name in POSITION_NAMES.get(target, ()) if name.endswith("出发")),
+            None,
+        )
+        if not departure:
+            continue
+        destination = departure[: -len("出发")]
+        for prefix in ("右上", "右下", "左上", "左下"):
+            if destination.startswith(prefix):
+                destination = destination[len(prefix) :]
+                break
+        return destination
+    return None
+
+
+def legacy_carriage_prefix(route_name):
+    actions = ROUTES.get(route_name, ())
+    for index, (target, _delay) in enumerate(actions, start=1):
+        names = POSITION_NAMES.get(target, ()) if isinstance(target, tuple) else ()
+        if any(name.endswith("出发") for name in names):
+            return list(actions[:index])
+    return []
+
+
+def carriage_destination_matches(map_name, destination):
+    return map_name in CARRIAGE_DESTINATION_MAP_ALIASES.get(destination, {destination})
+
+
+def ensure_non_current_carriage_origin(
+    route_name,
+    *,
+    task_name,
+    automation,
+    state_reader,
+    args,
+):
+    """Move to a neutral map if the route's carriage icon is hidden by the player marker."""
+    destination = legacy_carriage_destination(route_name)
+    if not destination or args.dry_run:
+        return None
+    current = state_reader.read_state()
+    if not current.map_name or not current.coordinate:
+        raise RuntimeError(
+            f"Cannot start carriage route {route_name}: the in-game map/coordinate is unreadable."
+        )
+    if not carriage_destination_matches(current.map_name, destination):
+        return current
+
+    choice = next(
+        (
+            (neutral_route, legacy_carriage_destination(neutral_route))
+            for neutral_route in NEUTRAL_TRAVEL_ROUTES
+            if legacy_carriage_destination(neutral_route) not in {None, destination, current.map_name}
+        ),
+        None,
+    )
+    if choice is None:
+        raise RuntimeError(f"Cannot find a neutral carriage map while already in {destination}.")
+    neutral_route, neutral_destination = choice
+    prefix = legacy_carriage_prefix(neutral_route)
+    if not prefix:
+        raise RuntimeError(f"Neutral route {neutral_route} has no carriage departure prefix.")
+
+    log_event(
+        args.log_jsonl,
+        {
+            "event": "carriage_origin_reposition_started",
+            "task": task_name,
+            "route": route_name,
+            "current_map": current.map_name,
+            "route_destination": destination,
+            "neutral_route": neutral_route,
+            "neutral_destination": neutral_destination,
+        },
+    )
+    automation.run_actions(
+        prefix,
+        route_name=f"reposition_{neutral_destination}",
+        start_delay=0.5,
+        end_delay=7.0,
+        print_names=True,
+        dry_run=False,
+    )
+    reached, _elapsed = state_reader.wait_for_state(
+        {"map": neutral_destination},
+        timeout=15.0,
+        stable_samples=1,
+    )
+    log_event(
+        args.log_jsonl,
+        {
+            "event": "carriage_origin_reposition_completed",
+            "task": task_name,
+            "route": route_name,
+            "map": reached.map_name,
+            "coordinate": list(reached.coordinate) if reached.coordinate else None,
+        },
+    )
+    return reached
 
 
 def parse_args():
@@ -185,7 +301,7 @@ def parse_args():
         "--resume-coordinate-tolerance",
         type=int,
         default=0,
-        help="Maximum map-coordinate difference accepted by normal resume.",
+        help="Legacy compatibility option; restart recovery no longer resumes at a saved coordinate.",
     )
     parser.add_argument(
         "--no-human-input-pause",
@@ -196,6 +312,36 @@ def parse_args():
         "--resource-history",
         default="resource_history.jsonl",
         help="Append-only resource acquisition and adjustment ledger.",
+    )
+    parser.add_argument(
+        "--resource-gate-max-wait-seconds",
+        type=float,
+        default=300.0,
+        help="Wait this long for a resource point due soon; farther points are skipped for this pass.",
+    )
+    parser.add_argument(
+        "--night-period-min-score",
+        type=float,
+        default=0.65,
+        help="Minimum visual similarity required to confirm 子时 before protected livestock kills.",
+    )
+    parser.add_argument(
+        "--no-intermediate-saves",
+        dest="intermediate_saves",
+        action="store_false",
+        help="Disable in-game saves between resource points on multi-point routes.",
+    )
+    parser.set_defaults(intermediate_saves=True)
+    parser.add_argument(
+        "--session-check-seconds",
+        type=float,
+        default=15.0,
+        help="Read-only interval for detecting login screens or remote-device logout.",
+    )
+    parser.add_argument(
+        "--no-session-watchdog",
+        action="store_true",
+        help="Disable periodic login/remote-logout detection.",
     )
     parser.add_argument("--web-host", default="127.0.0.1", help="Monitoring service bind address.")
     parser.add_argument("--web-port", type=int, default=8765, help="Monitoring service port.")
@@ -268,6 +414,7 @@ def load_state(path, tasks):
     state = {}
     for name, task in tasks.items():
         task_state = raw_state.get(name, {})
+        last_status = task_state.get("last_status", "new")
         policy = policy_for_task(name, task.interval_minutes)
         lead_seconds = max(0.0, float(task_state.get("lead_seconds", task.lead_seconds)))
         lead_samples = max(0, int(task_state.get("lead_samples", 0)))
@@ -286,6 +433,10 @@ def load_state(path, tasks):
                 minutes=task.initial_delay_minutes,
                 seconds=lead_seconds,
             )
+        retry_not_before = parse_optional_datetime(task_state.get("retry_not_before"))
+        if retry_not_before is None and last_status in {"failed", "partial_failed"}:
+            # Schema migration: these statuses historically stored the retry gate in next_due.
+            retry_not_before = due_time
         stored_interval = task_state.get("interval_minutes")
         inferred_interval = None
         if last_refresh_anchor and next_due:
@@ -337,7 +488,7 @@ def load_state(path, tasks):
             "last_started": parse_optional_datetime(task_state.get("last_started")),
             "last_completed": parse_optional_datetime(task_state.get("last_completed")),
             "last_refresh_anchor": last_refresh_anchor,
-            "last_status": task_state.get("last_status", "new"),
+            "last_status": last_status,
             "failures": task_state.get("failures", 0),
             "lead_seconds": lead_seconds,
             "lead_samples": lead_samples,
@@ -347,6 +498,8 @@ def load_state(path, tasks):
             "anchor_mode": policy.anchor_mode,
             "resource_points": resource_points,
             "human_pause_seconds": max(0.0, float(task_state.get("human_pause_seconds", 0.0))),
+            "last_intermediate_save": parse_optional_datetime(task_state.get("last_intermediate_save")),
+            "retry_not_before": retry_not_before,
         }
     return state
 
@@ -507,12 +660,12 @@ def due_task_names(state, run_now, active_names=None, precision_reserve_seconds=
     now = datetime.now()
     names = active_names if active_names is not None else state
     due = [name for name in names if task_start_time(state[name]) <= now]
-    precise_due = [name for name in due if float(state[name].get("lead_seconds", 0.0)) > 0]
+    precise_due = [name for name in due if task_has_precision(state[name])]
     if due and not precise_due and precision_reserve_seconds > 0:
         future_precise_starts = [
             task_start_time(state[name])
             for name in names
-            if float(state[name].get("lead_seconds", 0.0)) > 0 and task_start_time(state[name]) > now
+            if task_has_precision(state[name]) and task_start_time(state[name]) > now
         ]
         if future_precise_starts:
             seconds_to_precise = (min(future_precise_starts) - now).total_seconds()
@@ -520,7 +673,7 @@ def due_task_names(state, run_now, active_names=None, precision_reserve_seconds=
                 return []
     def task_priority(name):
         task_state = state[name]
-        precise = float(task_state.get("lead_seconds", 0.0)) > 0
+        precise = task_has_precision(task_state)
         missed_target = task_state["next_due"] <= now
         return (
             not precise,
@@ -533,7 +686,55 @@ def due_task_names(state, run_now, active_names=None, precision_reserve_seconds=
 
 
 def task_start_time(task_state):
-    return task_state["next_due"] - timedelta(seconds=max(0.0, float(task_state.get("lead_seconds", 0.0))))
+    point_starts = []
+    for point in (task_state.get("resource_points") or {}).values():
+        point_due = point.get("next_due")
+        if isinstance(point_due, str):
+            point_due = parse_optional_datetime(point_due)
+        if not point_due:
+            continue
+        offset = max(
+            0.0,
+            float(point.get("anchor_offset_seconds", task_state.get("lead_seconds", 0.0))),
+        )
+        point_starts.append(point_due - timedelta(seconds=offset))
+    if point_starts:
+        start_at = min(point_starts)
+    else:
+        start_at = task_state["next_due"] - timedelta(
+            seconds=max(0.0, float(task_state.get("lead_seconds", 0.0)))
+        )
+    retry_not_before = task_state.get("retry_not_before")
+    if isinstance(retry_not_before, str):
+        retry_not_before = parse_optional_datetime(retry_not_before)
+    return max(start_at, retry_not_before) if retry_not_before else start_at
+
+
+def task_has_precision(task_state):
+    if float(task_state.get("lead_seconds", 0.0)) > 0:
+        return True
+    return any(
+        float(point.get("anchor_offset_seconds", 0.0)) > 0
+        for point in (task_state.get("resource_points") or {}).values()
+    )
+
+
+def all_resources_ready(state, active_names, *, now=None):
+    now = now or datetime.now()
+    due_times = []
+    for name in active_names:
+        task_state = state[name]
+        points = task_state.get("resource_points") or {}
+        if points:
+            for point in points.values():
+                due = point.get("next_due")
+                if isinstance(due, str):
+                    due = parse_optional_datetime(due)
+                if due:
+                    due_times.append(due)
+        elif task_state.get("next_due"):
+            due_times.append(task_state["next_due"])
+    return bool(due_times) and all(due <= now for due in due_times)
 
 
 def seconds_until_next_start(state, active_names=None):
@@ -545,6 +746,15 @@ def seconds_until_next_start(state, active_names=None):
 
 def next_due_from_anchor(anchor, interval_minutes, padding_seconds=0.0):
     return anchor + timedelta(minutes=interval_minutes, seconds=padding_seconds)
+
+
+def sleep_until(moment):
+    started = time.monotonic()
+    while True:
+        remaining = (moment - datetime.now()).total_seconds()
+        if remaining <= 0:
+            return max(0.0, time.monotonic() - started)
+        time.sleep(min(0.1, remaining))
 
 
 def resource_specs_for_route(task, route_name):
@@ -632,6 +842,59 @@ def apply_resource_anchor(
     return next_due
 
 
+def update_point_anchor_timing(point_state, observed_offset_seconds, observed_segment_seconds=None):
+    measured = max(0.0, float(observed_offset_seconds))
+    samples = max(0, int(point_state.get("anchor_offset_samples", 0)))
+    previous = max(0.0, float(point_state.get("anchor_offset_seconds", measured)))
+    point_state["anchor_offset_seconds"] = round(
+        measured if samples == 0 else previous * 0.7 + measured * 0.3,
+        3,
+    )
+    point_state["anchor_offset_samples"] = samples + 1
+    if observed_segment_seconds is not None:
+        segment = max(0.0, float(observed_segment_seconds))
+        segment_samples = max(0, int(point_state.get("segment_samples", 0)))
+        old_segment = max(0.0, float(point_state.get("segment_seconds", segment)))
+        point_state["segment_seconds"] = round(
+            segment if segment_samples == 0 else old_segment * 0.7 + segment * 0.3,
+            3,
+        )
+        point_state["segment_samples"] = segment_samples + 1
+
+
+def run_intermediate_save(task, route_name, spec, *, automation, args, state):
+    log_event(
+        args.log_jsonl,
+        {
+            "event": "intermediate_save_started",
+            "task": task.name,
+            "route": route_name,
+            "point_id": spec.point_id,
+        },
+    )
+    automation.run_actions(
+        ROUTES["save"],
+        route_name=f"{route_name}_checkpoint_save",
+        start_delay=0.2,
+        end_delay=1.0,
+        print_names=True,
+        dry_run=False,
+    )
+    saved_at = datetime.now()
+    state[task.name]["last_intermediate_save"] = saved_at
+    save_state(args.state_file, state)
+    log_event(
+        args.log_jsonl,
+        {
+            "event": "intermediate_save_completed",
+            "task": task.name,
+            "route": route_name,
+            "point_id": spec.point_id,
+            "saved_at": saved_at.isoformat(timespec="milliseconds"),
+        },
+    )
+
+
 def run_task(
     task,
     automation,
@@ -641,29 +904,39 @@ def run_task(
     *,
     scheduled_for=None,
     resume_checkpoint=None,
+    recovery_ticket=None,
     ledger=None,
+    period_reader=None,
+    session_manager=None,
 ):
     runtime_control = getattr(automation, "runtime_control", None)
     resume_checkpoint = resume_checkpoint if resume_checkpoint and resume_checkpoint.get("task") == task.name else None
+    if resume_checkpoint:
+        recovery_ticket = recovery_ticket or {
+            "task": task.name,
+            "recovery_mode": "restart_task",
+            "abandoned_checkpoint": dict(resume_checkpoint),
+        }
+        resume_checkpoint = None
+    recovery_ticket = recovery_ticket if recovery_ticket and recovery_ticket.get("task") == task.name else None
     invoked_at = datetime.now()
-    started_at = parse_optional_datetime((resume_checkpoint or {}).get("task_started_at")) or invoked_at
+    started_at = invoked_at
     default_pause_baseline = runtime_control.total_pause_seconds if runtime_control is not None else 0.0
-    pause_at_start = max(
-        0.0,
-        float((resume_checkpoint or {}).get("task_pause_baseline", default_pause_baseline)),
-    )
+    pause_at_start = max(0.0, float(default_pause_baseline))
     original_next_due = state[task.name]["next_due"]
-    resume_route_index = max(1, int((resume_checkpoint or {}).get("route_index", 1)))
-    resume_action_index = max(1, int((resume_checkpoint or {}).get("next_action_index", 1)))
-    scheduled_wait_seconds = max(0.0, float((resume_checkpoint or {}).get("scheduled_wait_seconds", 0.0)))
+    resume_route_index = 1
+    resume_action_index = 1
+    scheduled_wait_seconds = 0.0
     target_label = f" target={scheduled_for.isoformat(timespec='milliseconds')}" if scheduled_for else ""
-    resume_label = f" resume=route:{resume_route_index}/action:{resume_action_index}" if resume_checkpoint else ""
+    resume_label = " recovery=restart_task" if recovery_ticket else ""
     print(
         f"{invoked_at:%Y-%m-%d %H:%M:%S} start {task.name}{target_label}{resume_label}: "
         f"{', '.join(task.routes)}"
     )
     state[task.name]["last_started"] = started_at
-    state[task.name]["last_status"] = "resuming" if resume_checkpoint else "running"
+    state[task.name]["last_status"] = "recovering" if recovery_ticket else "running"
+    if not args.dry_run:
+        state[task.name]["retry_not_before"] = None
     if runtime_control is not None:
         runtime_control.replace_context(
             task=task.name,
@@ -684,7 +957,7 @@ def run_task(
             "routes": task.routes,
             "scheduled_for": scheduled_for.isoformat(timespec="milliseconds") if scheduled_for else None,
             "lead_seconds": state[task.name].get("lead_seconds", 0.0),
-            "resume_checkpoint": resume_checkpoint,
+            "recovery_ticket": recovery_ticket,
         },
     )
 
@@ -693,6 +966,8 @@ def run_task(
     expected_specs = task_resource_specs(task)
     expected_ids = {spec.point_id for spec in expected_specs}
     anchors_this_run = {}
+    anchor_wait_totals = {}
+    anchor_pause_totals = {}
     skipped_point_ids = set()
     recorded_dispatches = set()
     try:
@@ -703,11 +978,21 @@ def run_task(
             if route_name not in ROUTES and not is_smart:
                 raise KeyError(f"Route '{route_name}' is not defined in coordinates.py")
 
+            if not is_smart and getattr(smart_runner, "state_reader", None) is not None:
+                ensure_non_current_carriage_origin(
+                    route_name,
+                    task_name=task.name,
+                    automation=automation,
+                    state_reader=smart_runner.state_reader,
+                    args=args,
+                )
+
             print(f"route {route_name}")
             log_event(args.log_jsonl, {"event": "route_started", "task": task.name, "route": route_name})
             route_capture_dir = args.capture_dir if args.capture == "route" else None
             route_specs = resource_specs_for_route(task, route_name)
             specs_by_index = {spec.action_index: spec for spec in route_specs}
+            gates_by_index = {max(1, spec.action_index - 2): spec for spec in route_specs}
             route_start_index = resume_action_index if resume_checkpoint and route_index == resume_route_index else 1
             skip_action_indexes = set()
             if not is_smart:
@@ -727,6 +1012,12 @@ def run_task(
                         and point_due
                         and point_due > now
                     ):
+                        seconds_until_due = (point_due - now).total_seconds()
+                        if seconds_until_due <= max(
+                            0.0,
+                            float(getattr(args, "resource_gate_max_wait_seconds", 0.0)),
+                        ):
+                            continue
                         skipped_point_ids.add(spec.point_id)
                         skip_action_indexes.update(
                             index
@@ -742,8 +1033,53 @@ def run_task(
                                 "point_id": spec.point_id,
                                 "point_label": spec.label,
                                 "next_due": point_due.isoformat(timespec="milliseconds"),
+                                "seconds_until_due": round(seconds_until_due, 3),
                             },
                         )
+
+            def before_legacy_action(status):
+                nonlocal scheduled_wait_seconds
+                spec = gates_by_index.get(int(status.get("index", 0)))
+                if spec is None:
+                    return
+                point_state = state[task.name].get("resource_points", {}).get(spec.point_id, {})
+                point_due = point_state.get("next_due")
+                if isinstance(point_due, str):
+                    point_due = parse_optional_datetime(point_due)
+                if point_due and point_due > datetime.now():
+                    waited = (
+                        runtime_control.wait_until(point_due)
+                        if runtime_control is not None
+                        else sleep_until(point_due)
+                    )
+                    scheduled_wait_seconds += waited
+                    if runtime_control is not None:
+                        runtime_control.set_context(scheduled_wait_seconds=scheduled_wait_seconds)
+                    log_event(
+                        args.log_jsonl,
+                        {
+                            "event": "resource_point_gate_reached",
+                            "task": task.name,
+                            "route": route_name,
+                            "point_id": spec.point_id,
+                            "scheduled_for": point_due.isoformat(timespec="milliseconds"),
+                            "waited_seconds": round(waited, 3),
+                        },
+                    )
+                if task.name in NIGHT_GATED_TASKS:
+                    if period_reader is None:
+                        raise RuntimeError("Protected livestock route has no game-period reader.")
+                    period = period_reader.wait_for_zi(timeout=8.0, stable_samples=2)
+                    log_event(
+                        args.log_jsonl,
+                        {
+                            "event": "night_period_verified",
+                            "task": task.name,
+                            "route": route_name,
+                            "point_id": spec.point_id,
+                            **period.as_dict(),
+                        },
+                    )
 
             def log_action(status):
                 nonlocal refresh_anchor, refresh_anchor_pause_seconds
@@ -774,12 +1110,71 @@ def run_task(
                     ledger=ledger,
                 )
                 anchors_this_run[spec.point_id] = anchored_at
+                pause_elapsed = (
+                    max(0.0, runtime_control.total_pause_seconds - pause_at_start)
+                    if runtime_control is not None
+                    else 0.0
+                )
+                observed_offset = max(
+                    0.0,
+                    (anchored_at - started_at).total_seconds()
+                    - scheduled_wait_seconds
+                    - pause_elapsed,
+                )
+                prior_anchors = [
+                    (point_id, value)
+                    for point_id, value in anchors_this_run.items()
+                    if point_id != spec.point_id and value <= anchored_at
+                ]
+                if prior_anchors:
+                    prior_point_id, prior_anchor = max(prior_anchors, key=lambda item: item[1])
+                    observed_segment = max(
+                        0.0,
+                        (anchored_at - prior_anchor).total_seconds()
+                        - (scheduled_wait_seconds - anchor_wait_totals.get(prior_point_id, 0.0))
+                        - (pause_elapsed - anchor_pause_totals.get(prior_point_id, 0.0)),
+                    )
+                else:
+                    observed_segment = None
+                anchor_wait_totals[spec.point_id] = scheduled_wait_seconds
+                anchor_pause_totals[spec.point_id] = pause_elapsed
+                point_state = state[task.name].setdefault("resource_points", {}).setdefault(spec.point_id, {})
+                update_point_anchor_timing(point_state, observed_offset, observed_segment)
+                save_state(args.state_file, state)
+                log_event(
+                    args.log_jsonl,
+                    {
+                        "event": "resource_point_timing_observed",
+                        "task": task.name,
+                        "route": route_name,
+                        "point_id": spec.point_id,
+                        "anchor_offset_seconds": point_state["anchor_offset_seconds"],
+                        "anchor_offset_samples": point_state["anchor_offset_samples"],
+                        "observed_offset_seconds": round(observed_offset, 3),
+                        "observed_segment_seconds": (
+                            round(observed_segment, 3) if observed_segment is not None else None
+                        ),
+                    },
+                )
                 if refresh_anchor is None or anchored_at >= refresh_anchor:
                     refresh_anchor = anchored_at
                     refresh_anchor_pause_seconds = (
                         max(0.0, runtime_control.total_pause_seconds - pause_at_start)
                         if runtime_control is not None
                         else 0.0
+                    )
+                if (
+                    bool(getattr(args, "intermediate_saves", False))
+                    and len(route_specs) > 1
+                    and spec != route_specs[-1]
+                ):
+                    run_intermediate_save(
+                        task,
+                        route_name,
+                        spec,
+                        automation=automation,
+                        args=args,
+                        state=state,
                     )
 
             if is_smart:
@@ -822,7 +1217,33 @@ def run_task(
                     route_index=route_index,
                     total_routes=len(task.routes),
                     skip_action_indexes=skip_action_indexes,
+                    before_action_hook=before_legacy_action,
                 )
+            if route_name == "sleep1" and not args.dry_run:
+                try:
+                    smart_runner.state_reader.find_text("休息中", exact=False)
+                except StateReadError:
+                    pass
+                else:
+                    smart_runner.state_reader.wait_for_text(
+                        "休息中",
+                        present=False,
+                        timeout=20.0,
+                        stable_samples=2,
+                    )
+                if task.name in NIGHT_GATED_TASKS:
+                    if period_reader is None:
+                        raise RuntimeError("Protected livestock route has no game-period reader.")
+                    period = period_reader.wait_for_zi(timeout=8.0, stable_samples=2)
+                    log_event(
+                        args.log_jsonl,
+                        {
+                            "event": "night_rest_verified",
+                            "task": task.name,
+                            "route": route_name,
+                            **period.as_dict(),
+                        },
+                    )
             log_event(args.log_jsonl, {"event": "route_completed", "task": task.name, "route": route_name})
             if runtime_control is not None:
                 runtime_control.set_context(
@@ -869,6 +1290,7 @@ def run_task(
         state[task.name]["last_refresh_anchor"] = anchor
         state[task.name]["last_status"] = "ok"
         state[task.name]["failures"] = 0
+        state[task.name]["retry_not_before"] = None
         task_pause_seconds = (
             max(0.0, runtime_control.total_pause_seconds - pause_at_start)
             if runtime_control is not None
@@ -914,6 +1336,24 @@ def run_task(
             runtime_control.clear_checkpoint()
     except Exception as exc:
         failed_at = datetime.now()
+        if runtime_control is not None and session_manager is not None and not runtime_control.is_paused:
+            try:
+                session = session_manager.detect()
+                if session.state in LOGIN_STATES:
+                    runtime_control.request_pause(
+                        reason=f"session_{session.state}",
+                        source="task_failure_session_check",
+                        details=session.as_dict(),
+                    )
+            except Exception as session_exc:
+                log_event(
+                    args.log_jsonl,
+                    {
+                        "event": "task_failure_session_check_failed",
+                        "task": task.name,
+                        "error": repr(session_exc),
+                    },
+                )
         state[task.name]["failures"] += 1
         failed_after_anchor = refresh_anchor or getattr(exc, "refresh_anchor", None)
         if failed_after_anchor:
@@ -933,8 +1373,11 @@ def run_task(
                 ),
             )
             if incomplete:
-                state[task.name]["next_due"] = failed_at + timedelta(minutes=args.retry_minutes)
+                retry_at = failed_at + timedelta(minutes=args.retry_minutes)
+                state[task.name]["next_due"] = retry_at
+                state[task.name]["retry_not_before"] = retry_at
             else:
+                state[task.name]["retry_not_before"] = None
                 relevant_points = {
                     point_id: state[task.name].get("resource_points", {})[point_id]
                     for point_id in expected_ids
@@ -957,7 +1400,9 @@ def run_task(
         else:
             state[task.name]["last_status"] = "failed"
             # Retry later, but do not shift the game-refresh anchor as if the task succeeded.
-            state[task.name]["next_due"] = failed_at + timedelta(minutes=args.retry_minutes)
+            retry_at = failed_at + timedelta(minutes=args.retry_minutes)
+            state[task.name]["next_due"] = retry_at
+            state[task.name]["retry_not_before"] = retry_at
         task_pause_seconds = (
             max(0.0, runtime_control.total_pause_seconds - pause_at_start)
             if runtime_control is not None
@@ -1067,6 +1512,28 @@ def main():
         timing_file=args.timing_file,
     )
     runtime_control.set_state_provider(smart_runner.state_reader.read_state)
+    event_logger = lambda event: log_event(args.log_jsonl, event)
+    session_manager = GameSessionManager(
+        automation,
+        state_reader=smart_runner.state_reader,
+        event_logger=event_logger,
+        capture_dir=args.capture_dir,
+    )
+    runtime_control.set_resume_preparer(
+        lambda **request: session_manager.recover_latest_server_save(
+            force=bool(request.get("force")),
+        )
+    )
+    period_reader = GamePeriodReader(
+        automation,
+        min_similarity=args.night_period_min_score,
+    )
+    session_watchdog = SessionWatchdog(
+        session_manager,
+        runtime_control,
+        interval_seconds=args.session_check_seconds,
+        event_logger=event_logger,
+    )
     ledger = ResourceLedger(args.resource_history)
     hotkey = SchedulerStopHotkey(args.stop_hotkey, stop_event, args.log_jsonl)
     monitor = None
@@ -1114,6 +1581,8 @@ def main():
     try:
         runtime_hotkeys = {} if args.no_stop_hotkey else {args.stop_hotkey: hotkey.request_stop}
         runtime_control.start_listeners(extra_hotkeys=runtime_hotkeys)
+        if not args.no_session_watchdog:
+            session_watchdog.start()
         if not args.no_stop_hotkey:
             print(f"Global stop hotkey enabled: {args.stop_hotkey}")
         if not args.no_human_input_pause:
@@ -1128,35 +1597,49 @@ def main():
 
         while True:
             automation.wait_seconds(0.0)
-            resume_checkpoint = runtime_control.peek_resume_checkpoint()
-            resumable_phases = {"task_start", "route_start", "before_action", "after_action", "between_routes"}
-            resume_task = (
-                resume_checkpoint.get("task")
-                if resume_checkpoint and resume_checkpoint.get("phase") in resumable_phases
+            recovery_ticket = runtime_control.peek_resume_checkpoint()
+            recovery_task = (
+                recovery_ticket.get("task")
+                if recovery_ticket
+                and recovery_ticket.get("recovery_mode") == "restart_task"
+                and recovery_ticket.get("phase") == "restart_task"
                 else None
             )
-            if resume_task in tasks:
-                resume_checkpoint = runtime_control.consume_resume_checkpoint()
-            elif resume_task:
+            if recovery_task in tasks:
+                recovery_ticket = runtime_control.consume_resume_checkpoint()
+            elif recovery_task:
                 runtime_control.consume_resume_checkpoint()
-                print(f"Discarding checkpoint for inactive task {resume_task}.")
+                print(f"Discarding recovery ticket for inactive task {recovery_task}.")
                 log_event(
                     args.log_jsonl,
                     {
                         "event": "automation_resume_checkpoint_discarded",
-                        "task": resume_task,
+                        "task": recovery_task,
                         "reason": "task_inactive",
                     },
                 )
-                resume_checkpoint = None
-                resume_task = None
-            elif resume_checkpoint and not resume_task:
+                recovery_ticket = None
+                recovery_task = None
+            elif recovery_ticket and not recovery_task:
                 runtime_control.consume_resume_checkpoint()
-                resume_checkpoint = None
-            forced = run_now is not None or resume_task is not None
+                recovery_ticket = None
+
+            if recovery_ticket and all_resources_ready(state, tasks):
+                log_event(
+                    args.log_jsonl,
+                    {
+                        "event": "recovery_full_cycle_selected",
+                        "abandoned_task": recovery_task,
+                        "reason": "all_active_resources_ready",
+                    },
+                )
+                recovery_ticket = None
+                recovery_task = None
+
+            forced = run_now is not None or recovery_task is not None
             reserve_seconds = 0.0 if forced or args.once else max(0.0, args.precision_reserve_seconds)
-            if resume_task:
-                names = [resume_task]
+            if recovery_task:
+                names = [recovery_task]
             else:
                 names = due_task_names(
                     state,
@@ -1178,11 +1661,13 @@ def main():
                     state,
                     scheduled_for=(
                         state[name]["next_due"]
-                        if name == resume_task
+                        if name == recovery_task
                         else (None if forced else state[name]["next_due"])
                     ),
-                    resume_checkpoint=resume_checkpoint if name == resume_task else None,
+                    recovery_ticket=recovery_ticket if name == recovery_task else None,
                     ledger=ledger,
+                    period_reader=period_reader,
+                    session_manager=session_manager,
                 )
             completed_batch = completed_batch or bool(batch_names)
 
@@ -1207,6 +1692,8 @@ def main():
         if not args.no_stop_hotkey:
             hotkey.stop()
         runtime_control.stop_listeners()
+        if not args.no_session_watchdog:
+            session_watchdog.stop()
         if monitor is not None:
             monitor.stop()
         signal.signal(signal.SIGINT, previous_sigint_handler)

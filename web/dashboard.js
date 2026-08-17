@@ -101,6 +101,7 @@ function renderStatus(payload) {
   $("#runtime-state").textContent = runtime.paused ? "已暂停" : (payload.scheduler_attached ? "运行中" : "只读");
   $("#current-task").textContent = context.task || checkpoint.task || "-";
   $("#current-step").textContent = stepLabel(context, checkpoint);
+  $("#session-state").textContent = context.session_state || "-";
   $("#pause-total").textContent = elapsedDuration(runtime.total_pause_seconds || 0);
   $("#ready-count").textContent = payload.tasks.filter((item) => item.status === "ready").length;
   $("#failed-count").textContent = payload.tasks.filter((item) => item.status === "failed").length;
@@ -132,8 +133,9 @@ function renderStatus(payload) {
       <td>${statusCell(point.status)}</td>
       <td>${escapeHtml(duration(point.seconds_remaining))}</td>
       <td>${escapeHtml(dateTime(point.last_refresh_anchor))}</td>
+      <td>${escapeHtml(point.anchor_offset_samples ? `${point.anchor_offset_seconds.toFixed(1)} 秒` : "待学习")}</td>
       <td>${escapeHtml(point.samples)}</td>
-    </tr>`).join("") || emptyRow(7);
+    </tr>`).join("") || emptyRow(8);
 
   renderCheckpoint(runtime.paused ? checkpoint : null);
 }
@@ -155,7 +157,8 @@ function renderCheckpoint(checkpoint) {
     ["地图", checkpoint.map],
     ["坐标", Array.isArray(checkpoint.coordinate) ? `(${checkpoint.coordinate.join(", ")})` : null],
     ["暂停时间", dateTime(checkpoint.paused_at)],
-    ["原因", checkpoint.reason]
+    ["原因", checkpoint.reason],
+    ["恢复策略", "废弃中间动作，从任务第一条路线重跑"]
   ] : [["状态", "无活动断点"]];
   $("#checkpoint-details").innerHTML = fields.map(([label, value]) =>
     `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value || "-")}</dd>`
@@ -212,7 +215,9 @@ $$('[data-tab]').forEach((button) => {
 $$('[data-control]').forEach((button) => {
   button.addEventListener("click", async () => {
     if (["force-resume", "stop"].includes(button.dataset.control)) {
-      const label = button.dataset.control === "stop" ? "确认安全停止调度器？" : "确认跳过地图和坐标校验？";
+      const label = button.dataset.control === "stop"
+        ? "确认安全停止调度器？"
+        : "确认跳过会话识别，但仍从任务开头重跑？";
       if (!window.confirm(label)) return;
     }
     button.disabled = true;

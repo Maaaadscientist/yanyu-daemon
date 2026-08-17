@@ -46,7 +46,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 .runtime-band {
   display: grid;
-  grid-template-columns: repeat(8, minmax(110px, 1fr));
+  grid-template-columns: repeat(9, minmax(100px, 1fr));
   border-bottom: 1px solid #ccd3ce;
   background: #fff;
   padding: 0 clamp(16px, 3vw, 42px);

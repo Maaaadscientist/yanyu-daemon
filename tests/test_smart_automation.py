@@ -159,6 +159,16 @@ class SmartAutomationTests(unittest.TestCase):
 
         self.assertEqual(state.coordinate, (28, 11))
 
+    def test_parse_game_state_accepts_map_and_coordinate_in_one_ocr_observation(self):
+        state = parse_game_state(
+            [
+                TextObservation("逻邪河谷（12.6）", 0.8, 0.88, 0.709, 0.11, 0.03),
+            ]
+        )
+
+        self.assertEqual(state.map_name, "逻邪河谷")
+        self.assertEqual(state.coordinate, (12, 6))
+
     def test_negative_state_guard_blocks_same_map_before_any_click(self):
         automation = FakeAutomation()
         procedure = {

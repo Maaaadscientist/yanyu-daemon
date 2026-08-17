@@ -167,7 +167,7 @@ class GameAutomation:
             except Exception as exc:
                 print(f"Cannot activate the game window through AppKit: {exc}")
 
-        if activated:
+        if activated and settle_seconds > 0:
             self.wait_seconds(settle_seconds)
         return activated
 
@@ -389,6 +389,7 @@ class GameAutomation:
         dry_run: bool = False,
         step: bool = False,
         action_logger: Callable[[dict], None] | None = None,
+        before_action_hook: Callable[[dict], None] | None = None,
         capture_dir: str | None = None,
         capture_each_action: bool = False,
         start_index: int = 1,
@@ -448,6 +449,8 @@ class GameAutomation:
                     runtime_control.action_dispatched(index)
                 completed += 1
                 continue
+            if before_action_hook:
+                before_action_hook(status)
             if print_names or dry_run or step:
                 print(format_status(status))
             if action_logger:

@@ -14,8 +14,8 @@
     </div>
     <div class="control-bar" aria-label="调度控制">
       <button type="button" data-control="pause">暂停</button>
-      <button type="button" data-control="resume">校验恢复</button>
-      <button type="button" class="warning" data-control="force-resume">强制恢复</button>
+      <button type="button" data-control="resume">安全从头恢复</button>
+      <button type="button" class="warning" data-control="force-resume">强制从头恢复</button>
       <button type="button" class="danger" data-control="stop">安全停止</button>
     </div>
   </header>
@@ -24,6 +24,7 @@
     <div><span>运行状态</span><strong id="runtime-state">未知</strong></div>
     <div><span>当前任务</span><strong id="current-task">-</strong></div>
     <div><span>当前步骤</span><strong id="current-step">-</strong></div>
+    <div><span>游戏会话</span><strong id="session-state">-</strong></div>
     <div><span>累计暂停</span><strong id="pause-total">0 秒</strong></div>
     <div><span>待采资源</span><strong id="ready-count">0</strong></div>
     <div><span>失败任务</span><strong id="failed-count">0</strong></div>
@@ -61,7 +62,7 @@
       <div class="section-heading"><h2>资源点</h2></div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>资源点</th><th>任务</th><th>类型</th><th>状态</th><th>剩余</th><th>刷新锚点</th><th>样本</th></tr></thead>
+          <thead><tr><th>资源点</th><th>任务</th><th>类型</th><th>状态</th><th>剩余</th><th>刷新锚点</th><th>到达偏移</th><th>样本</th></tr></thead>
           <tbody id="point-rows"></tbody>
         </table>
       </div>

@@ -92,7 +92,26 @@ class MonitorData:
             ):
                 next_due = last_anchor + timedelta(minutes=interval)
             lead_seconds = max(0.0, _float(task_state.get("lead_seconds"), 0.0))
-            start_at = next_due - timedelta(seconds=lead_seconds) if next_due else None
+            point_starts = []
+            for point in (task_state.get("resource_points") or {}).values():
+                point_due = _datetime(point.get("next_due"))
+                if not point_due:
+                    continue
+                point_offset = max(
+                    0.0,
+                    _float(point.get("anchor_offset_seconds"), lead_seconds),
+                )
+                point_starts.append(point_due - timedelta(seconds=point_offset))
+            start_at = (
+                min(point_starts)
+                if point_starts
+                else (next_due - timedelta(seconds=lead_seconds) if next_due else None)
+            )
+            retry_not_before = _datetime(task_state.get("retry_not_before"))
+            if retry_not_before is None and task_state.get("last_status") in {"failed", "partial_failed"}:
+                retry_not_before = next_due
+            if retry_not_before and (start_at is None or retry_not_before > start_at):
+                start_at = retry_not_before
             status = _schedule_status(task_state.get("last_status"), next_due, start_at, now)
             tasks.append(
                 {
@@ -107,6 +126,11 @@ class MonitorData:
                     "start_at": start_at.isoformat(timespec="milliseconds") if start_at else None,
                     "seconds_remaining": round((next_due - now).total_seconds(), 1) if next_due else None,
                     "lead_seconds": lead_seconds,
+                    "retry_not_before": (
+                        retry_not_before.isoformat(timespec="milliseconds")
+                        if retry_not_before
+                        else None
+                    ),
                     "failures": int(task_state.get("failures", 0)),
                     "human_pause_seconds": _float(task_state.get("human_pause_seconds"), 0.0),
                     "point_count": len(task_state.get("resource_points") or {}),
@@ -127,6 +151,9 @@ class MonitorData:
                         "estimated_quantity": _float(point.get("estimated_quantity"), 1.0),
                         "unit": point.get("unit", "次"),
                         "samples": int(point.get("samples", 0)),
+                        "anchor_offset_seconds": _float(point.get("anchor_offset_seconds"), 0.0),
+                        "anchor_offset_samples": int(point.get("anchor_offset_samples", 0)),
+                        "segment_seconds": _float(point.get("segment_seconds"), 0.0),
                     }
                 )
         tasks.sort(key=lambda item: (_status_priority(item["status"]), item["next_due"] or "", item["task"]))
