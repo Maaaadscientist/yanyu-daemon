@@ -581,6 +581,32 @@ If recordings become large, keep them local or archive them separately.
 
 ## Troubleshooting
 
+### Background Input Isolation
+
+The scheduler process can run independently in `screen`, but the default `pyautogui` backend still shares the macOS cursor and foreground application.
+
+This client was tested with three supported no-cursor approaches:
+
+- `CGEventPostToPid` with private and HID event sources;
+- explicit target PID and window routing fields;
+- macOS Accessibility `AXPress` discovery.
+
+The UIKit-based game client ignored PID-targeted mouse events even while frontmost, and its Accessibility tree exposes the game canvas as one generic element rather than individual controls. A global HID event works, but moves the system cursor while the event is active. Therefore it is not a safe background backend for simultaneous desktop use.
+
+Run the read-only Accessibility inspection:
+
+```bash
+python3.12 ax_tree_probe.py
+```
+
+Run a PID-targeted single-click probe after stopping the scheduler:
+
+```bash
+python3.12 quartz_input_probe.py 包裹 --source hid --set-routing-fields --prime-move
+```
+
+`--delivery hid-tap` is deliberately restricted to a confirmed frontmost game window. It is diagnostic only and restores the original cursor position, but it still occupies the cursor during each event.
+
 ### `ModuleNotFoundError`
 
 Make sure installation and execution use the same interpreter:
