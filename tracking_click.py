@@ -1070,10 +1070,10 @@ def main():
     run_now = args.run_now
     completed_batch = False
     try:
+        runtime_hotkeys = {} if args.no_stop_hotkey else {args.stop_hotkey: hotkey.request_stop}
+        runtime_control.start_listeners(extra_hotkeys=runtime_hotkeys)
         if not args.no_stop_hotkey:
-            hotkey.start()
             print(f"Global stop hotkey enabled: {args.stop_hotkey}")
-        runtime_control.start_listeners()
         if not args.no_human_input_pause:
             print(f"Human input pauses automation; resume hotkey: {args.resume_hotkey}")
         if monitor is not None:

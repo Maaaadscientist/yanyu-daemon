@@ -1,8 +1,11 @@
 import json
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from runtime_control import ResumeValidationError, RuntimeControl
 
@@ -72,6 +75,92 @@ class RuntimeControlTests(unittest.TestCase):
             second.request_resume(source="test", force=True)
             second.wait_if_paused()
             self.assertFalse(second.is_paused)
+
+    def test_listeners_share_one_keyboard_listener_for_all_hotkeys(self):
+        hotkey_instances = []
+        keyboard_listeners = []
+        mouse_listeners = []
+
+        class FakeHotKey:
+            @staticmethod
+            def parse(value):
+                return value
+
+            def __init__(self, keys, callback):
+                self.keys = keys
+                self.callback = callback
+                hotkey_instances.append(self)
+
+            def press(self, _key):
+                return None
+
+            def release(self, _key):
+                return None
+
+        class FakeListener:
+            def __init__(self, **callbacks):
+                self.callbacks = callbacks
+                self.started = False
+                self.stopped = False
+
+            def canonical(self, key):
+                return key
+
+            def start(self):
+                self.started = True
+
+            def stop(self):
+                self.stopped = True
+
+            def is_alive(self):
+                return False
+
+        class FakeKeyboardListener(FakeListener):
+            def __init__(self, **callbacks):
+                super().__init__(**callbacks)
+                keyboard_listeners.append(self)
+
+        class FakeMouseListener(FakeListener):
+            def __init__(self, **callbacks):
+                super().__init__(**callbacks)
+                mouse_listeners.append(self)
+
+        fake_pynput = SimpleNamespace(
+            keyboard=SimpleNamespace(HotKey=FakeHotKey, Listener=FakeKeyboardListener),
+            mouse=SimpleNamespace(Listener=FakeMouseListener),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            control = RuntimeControl(
+                stop_event=threading.Event(),
+                state_file=Path(directory, "runtime.json"),
+                detect_human_input=True,
+            )
+            with patch.dict(sys.modules, {"pynput": fake_pynput}):
+                control.start_listeners(extra_hotkeys={"<ctrl>+c": lambda: None})
+
+            self.assertEqual(len(keyboard_listeners), 1)
+            self.assertEqual(len(mouse_listeners), 1)
+            self.assertEqual([item.keys for item in hotkey_instances], ["<ctrl>+<alt>+r", "<ctrl>+c"])
+            self.assertTrue(keyboard_listeners[0].started)
+            self.assertTrue(mouse_listeners[0].started)
+
+            control.stop_listeners()
+            self.assertTrue(keyboard_listeners[0].stopped)
+            self.assertTrue(mouse_listeners[0].stopped)
+
+    def test_modifier_key_alone_does_not_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            control = RuntimeControl(
+                stop_event=threading.Event(),
+                state_file=Path(directory, "runtime.json"),
+                detect_human_input=True,
+            )
+
+            control._on_key_press("Key.ctrl")
+            self.assertFalse(control.is_paused)
+
+            control._on_key_press("'x'")
+            self.assertTrue(control.is_paused)
 
 
 if __name__ == "__main__":

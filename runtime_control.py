@@ -10,6 +10,24 @@ from typing import Callable, Mapping
 
 RUNTIME_CONTROL_SCHEMA_VERSION = 1
 
+_MODIFIER_KEY_NAMES = frozenset(
+    {
+        "Key.alt",
+        "Key.alt_l",
+        "Key.alt_r",
+        "Key.alt_gr",
+        "Key.cmd",
+        "Key.cmd_l",
+        "Key.cmd_r",
+        "Key.ctrl",
+        "Key.ctrl_l",
+        "Key.ctrl_r",
+        "Key.shift",
+        "Key.shift_l",
+        "Key.shift_r",
+    }
+)
+
 
 class ResumeValidationError(RuntimeError):
     pass
@@ -309,23 +327,38 @@ class RuntimeControl:
 
         return max(0.0, self._monotonic() - entered)
 
-    def start_listeners(self) -> None:
+    def start_listeners(self, extra_hotkeys: Mapping[str, Callable[[], object]] | None = None) -> None:
         if self._listeners:
             return
         from pynput import keyboard, mouse
 
-        resume_listener = keyboard.GlobalHotKeys({self.resume_hotkey: self.request_resume})
-        self._listeners = [resume_listener]
+        callbacks = {self.resume_hotkey: self.request_resume, **dict(extra_hotkeys or {})}
+        hotkeys = [keyboard.HotKey(keyboard.HotKey.parse(keys), callback) for keys, callback in callbacks.items()]
+        keyboard_listener = None
+
+        def on_press(key) -> None:
+            canonical = keyboard_listener.canonical(key)
+            for hotkey in hotkeys:
+                hotkey.press(canonical)
+            if not self.stop_event.is_set():
+                self._on_key_press(key)
+
+        def on_release(key) -> None:
+            canonical = keyboard_listener.canonical(key)
+            for hotkey in hotkeys:
+                hotkey.release(canonical)
+
+        # macOS can abort when several pynput keyboard event taps are created in
+        # one process. One listener dispatches resume, stop, and human input.
+        keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        self._listeners = [keyboard_listener]
         if self.detect_human_input:
-            self._listeners.extend(
-                [
-                    keyboard.Listener(on_press=self._on_key_press),
-                    mouse.Listener(
-                        on_move=self._on_mouse_move,
-                        on_click=self._on_mouse_click,
-                        on_scroll=self._on_mouse_scroll,
-                    ),
-                ]
+            self._listeners.append(
+                mouse.Listener(
+                    on_move=self._on_mouse_move,
+                    on_click=self._on_mouse_click,
+                    on_scroll=self._on_mouse_scroll,
+                )
             )
         for listener in self._listeners:
             listener.start()
@@ -339,6 +372,8 @@ class RuntimeControl:
                 listener.join(timeout=1.0)
 
     def _on_key_press(self, key) -> None:
+        if str(key) in _MODIFIER_KEY_NAMES:
+            return
         self._handle_physical_input("keyboard", {"key": str(key)})
 
     def _on_mouse_move(self, x, y) -> None:
